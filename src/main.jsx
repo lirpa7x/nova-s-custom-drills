@@ -559,14 +559,50 @@ function OptionCard({ option, index, group, canMoveDown, onChange, onDelete, onM
   );
 }
 
-function StepCard({ step, index, total, onChangeStep, onDuplicate, onDelete, onMove, onChangeOption, onDeleteOption, onMoveOption, onAddOption }) {
+function StepCard({
+  step,
+  index,
+  total,
+  isExpanded,
+  onToggleExpand,
+  onChangeStep,
+  onDuplicate,
+  onDelete,
+  onMove,
+  onChangeOption,
+  onDeleteOption,
+  onMoveOption,
+  onAddOption,
+  onDragStart,
+  onDragOver,
+  onDrop,
+}) {
   return (
-    <article className="step-card">
+    <article
+      className={`step-card ${isExpanded ? 'is-expanded' : 'is-collapsed'}`}
+      draggable
+      onDragStart={() => onDragStart(index)}
+      onDragOver={(event) => onDragOver(event, index)}
+      onDrop={() => onDrop(index)}
+    >
+      <button type="button" className="step-card__summary-button" onClick={onToggleExpand}>
+        <span className="step-card__drag-handle" aria-hidden="true">
+          ⋮⋮
+        </span>
+        <span className="step-card__summary-main">
+          <span className="eyebrow">Ball {index + 1}</span>
+          <strong>{step.type === 'group' ? 'Random Group' : 'Single Ball'}</strong>
+          <span className="step-card__summary">{stepSummary(step)}</span>
+        </span>
+        <span className="step-card__summary-tag">{isExpanded ? 'Editing' : 'Overview'}</span>
+      </button>
+      {isExpanded ? (
+        <>
       <div className="step-card__header">
         <div>
           <p className="eyebrow">Ball {index + 1}</p>
           <h3>{step.type === 'group' ? 'Random Group' : 'Single Ball'}</h3>
-          <p className="step-card__summary">{stepSummary(step)}</p>
+          <p className="step-card__summary">Expand one ball at a time to edit the full setup.</p>
         </div>
         <div className="step-card__actions">
           <button type="button" className="ghost-button" onClick={() => onMove(-1)} disabled={index === 0}>
@@ -622,6 +658,26 @@ function StepCard({ step, index, total, onChangeStep, onDuplicate, onDelete, onM
           Add Random Option
         </button>
       ) : null}
+        </>
+      ) : (
+        <div className="step-card__collapsed-footer">
+          <div className="step-card__chips">
+            <span>{step.type === 'group' ? `${step.options.length} options` : '1 option'}</span>
+            <span>{step.repetitions} reps</span>
+          </div>
+          <div className="step-card__actions">
+            <button type="button" className="ghost-button" onClick={() => onMove(-1)} disabled={index === 0}>
+              ↑
+            </button>
+            <button type="button" className="ghost-button" onClick={() => onMove(1)} disabled={index === total - 1}>
+              ↓
+            </button>
+            <button type="button" className="ghost-button" onClick={onDuplicate}>
+              Duplicate
+            </button>
+          </div>
+        </div>
+      )}
     </article>
   );
 }
@@ -879,6 +935,8 @@ function useNovaBotController() {
 
 function App() {
   const [store, setStore] = useState(() => loadStore());
+  const [expandedStepId, setExpandedStepId] = useState(null);
+  const dragStepIndexRef = useRef(null);
   const bot = useNovaBotController();
 
   useEffect(() => {
@@ -896,6 +954,16 @@ function App() {
     }
   }, [selectedProgram, store.programs]);
 
+  useEffect(() => {
+    if (!selectedProgram) {
+      return;
+    }
+    const activeStep = selectedProgram.steps.find((step) => step.id === expandedStepId);
+    if (!activeStep) {
+      setExpandedStepId(selectedProgram.steps[0]?.id || null);
+    }
+  }, [selectedProgram, expandedStepId]);
+
   function updateSelectedProgram(transform) {
     setStore((previous) => ({
       ...previous,
@@ -910,6 +978,7 @@ function App() {
       selectedProgramId: program.id,
       programs: [...previous.programs, program],
     }));
+    setExpandedStepId(program.steps[0].id);
   }
 
   function duplicateProgram() {
@@ -926,6 +995,7 @@ function App() {
       selectedProgramId: copy.id,
       programs: [...previous.programs, copy],
     }));
+    setExpandedStepId(copy.steps[0]?.id || null);
   }
 
   function deleteProgram(programId) {
@@ -933,7 +1003,11 @@ function App() {
       const remaining = previous.programs.filter((program) => program.id !== programId);
       if (!remaining.length) {
         const demo = createDemoStore();
+        setExpandedStepId(demo.programs[0].steps[0].id);
         return demo;
+      }
+      if (previous.selectedProgramId === programId) {
+        setExpandedStepId(remaining[0].steps[0]?.id || null);
       }
       return {
         ...previous,
@@ -972,10 +1046,12 @@ function App() {
   }
 
   function addStep(type) {
+    const nextStep = type === 'group' ? createGroupStep() : createBallStep();
     updateSelectedProgram((program) => ({
       ...program,
-      steps: [...program.steps, type === 'group' ? createGroupStep() : createBallStep()],
+      steps: [...program.steps, nextStep],
     }));
+    setExpandedStepId(nextStep.id);
   }
 
   function duplicateStep(stepIndex) {
@@ -984,6 +1060,7 @@ function App() {
       source.id = uid('step');
       source.options = source.options.map((option) => ({ ...option, id: uid('option') }));
       program.steps.splice(stepIndex + 1, 0, source);
+      setExpandedStepId(source.id);
       return program;
     });
   }
@@ -991,9 +1068,16 @@ function App() {
   function deleteStep(stepIndex) {
     updateSelectedProgram((program) => {
       if (program.steps.length === 1) {
-        program.steps = [createBallStep()];
+        const replacement = createBallStep();
+        program.steps = [replacement];
+        setExpandedStepId(replacement.id);
       } else {
+        const removedStep = program.steps[stepIndex];
         program.steps.splice(stepIndex, 1);
+        if (removedStep.id === expandedStepId) {
+          const fallback = program.steps[Math.max(0, stepIndex - 1)] || program.steps[0];
+          setExpandedStepId(fallback?.id || null);
+        }
       }
       return program;
     });
@@ -1003,6 +1087,16 @@ function App() {
     updateSelectedProgram((program) => ({
       ...program,
       steps: moveItem(program.steps, stepIndex, stepIndex + direction),
+    }));
+  }
+
+  function reorderStep(fromIndex, toIndex) {
+    if (fromIndex === toIndex || fromIndex == null || toIndex == null) {
+      return;
+    }
+    updateSelectedProgram((program) => ({
+      ...program,
+      steps: moveItem(program.steps, fromIndex, toIndex),
     }));
   }
 
@@ -1047,7 +1141,6 @@ function App() {
         <p className="muted">Programs are stored locally as JSON in your browser.</p>
         <div className="stacked-actions">
           <button type="button" className="primary-button" onClick={addProgram}>New Program</button>
-          <button type="button" className="secondary-button" onClick={duplicateProgram} disabled={!selectedProgram}>Duplicate Program</button>
         </div>
         <div className="program-list">
           {store.programs.map((program) => (
@@ -1059,6 +1152,9 @@ function App() {
               onDelete={() => deleteProgram(program.id)}
             />
           ))}
+        </div>
+        <div className="sidebar-footer-actions">
+          <button type="button" className="secondary-button" onClick={duplicateProgram} disabled={!selectedProgram}>Duplicate Program</button>
         </div>
       </aside>
 
@@ -1084,6 +1180,8 @@ function App() {
                   step={step}
                   index={stepIndex}
                   total={selectedProgram.steps.length}
+                  isExpanded={step.id === expandedStepId}
+                  onToggleExpand={() => setExpandedStepId(step.id)}
                   onChangeStep={(patch) => updateStep(stepIndex, patch)}
                   onDuplicate={() => duplicateStep(stepIndex)}
                   onDelete={() => deleteStep(stepIndex)}
@@ -1092,6 +1190,16 @@ function App() {
                   onDeleteOption={(optionIndex) => deleteOption(stepIndex, optionIndex)}
                   onMoveOption={(optionIndex, direction) => moveOption(stepIndex, optionIndex, direction)}
                   onAddOption={() => addOption(stepIndex)}
+                  onDragStart={(dragIndex) => {
+                    dragStepIndexRef.current = dragIndex;
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                  }}
+                  onDrop={(dropIndex) => {
+                    reorderStep(dragStepIndexRef.current, dropIndex);
+                    dragStepIndexRef.current = null;
+                  }}
                 />
               ))}
             </div>

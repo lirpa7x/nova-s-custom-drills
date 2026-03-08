@@ -210,6 +210,14 @@ button:disabled {
   gap: 12px;
 }
 
+.program-list {
+  margin-top: 14px;
+}
+
+.sidebar-footer-actions {
+  margin-top: 26px;
+}
+
 .program-row {
   display: flex;
   align-items: center;
@@ -249,6 +257,48 @@ button:disabled {
   padding: 18px;
 }
 
+.step-card.is-collapsed {
+  padding: 14px 16px;
+}
+
+.step-card__summary-button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.step-card__drag-handle {
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.step-card__summary-main {
+  display: grid;
+  gap: 4px;
+}
+
+.step-card__summary-main strong {
+  font-size: 1.05rem;
+  font-family: 'Palatino Linotype', 'Book Antiqua', serif;
+}
+
+.step-card__summary-tag {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .step-card__header,
 .option-card__header,
 .preview-card__head {
@@ -262,6 +312,31 @@ button:disabled {
 .option-card__meta {
   margin: 8px 0 0;
   color: var(--muted);
+}
+
+.step-card__collapsed-footer {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.step-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.step-card__chips span {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .step-card__toolbar {
@@ -444,7 +519,17 @@ button:disabled {
   .option-card__header,
   .panel-head,
   .step-card__toolbar,
-  .preview-card__head {
+  .preview-card__head,
+  .step-card__collapsed-footer {
     flex-direction: column;
+  }
+
+  .step-card__summary-button {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .step-card__summary-tag {
+    grid-column: 2;
+    justify-self: start;
   }
 }
