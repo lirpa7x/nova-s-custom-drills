@@ -954,16 +954,6 @@ function App() {
     }
   }, [selectedProgram, store.programs]);
 
-  useEffect(() => {
-    if (!selectedProgram) {
-      return;
-    }
-    const activeStep = selectedProgram.steps.find((step) => step.id === expandedStepId);
-    if (!activeStep) {
-      setExpandedStepId(selectedProgram.steps[0]?.id || null);
-    }
-  }, [selectedProgram, expandedStepId]);
-
   function updateSelectedProgram(transform) {
     setStore((previous) => ({
       ...previous,
@@ -978,7 +968,7 @@ function App() {
       selectedProgramId: program.id,
       programs: [...previous.programs, program],
     }));
-    setExpandedStepId(program.steps[0].id);
+    setExpandedStepId(null);
   }
 
   function duplicateProgram() {
@@ -995,7 +985,7 @@ function App() {
       selectedProgramId: copy.id,
       programs: [...previous.programs, copy],
     }));
-    setExpandedStepId(copy.steps[0]?.id || null);
+    setExpandedStepId(null);
   }
 
   function deleteProgram(programId) {
@@ -1003,11 +993,11 @@ function App() {
       const remaining = previous.programs.filter((program) => program.id !== programId);
       if (!remaining.length) {
         const demo = createDemoStore();
-        setExpandedStepId(demo.programs[0].steps[0].id);
+        setExpandedStepId(null);
         return demo;
       }
       if (previous.selectedProgramId === programId) {
-        setExpandedStepId(remaining[0].steps[0]?.id || null);
+        setExpandedStepId(null);
       }
       return {
         ...previous,
@@ -1148,7 +1138,10 @@ function App() {
               key={program.id}
               active={program.id === store.selectedProgramId}
               name={program.name}
-              onSelect={() => setStore((previous) => ({ ...previous, selectedProgramId: program.id }))}
+              onSelect={() => {
+                setExpandedStepId(null);
+                setStore((previous) => ({ ...previous, selectedProgramId: program.id }));
+              }}
               onDelete={() => deleteProgram(program.id)}
             />
           ))}
