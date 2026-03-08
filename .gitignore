@@ -18,3 +18,5 @@ _site/
 Gemfile.lock
 .clj-kondo/
 .lsp/
+
+node_modules/
