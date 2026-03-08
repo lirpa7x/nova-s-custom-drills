@@ -631,7 +631,7 @@ function StepCard({
             onClick={() =>
               onChangeStep({
                 type: 'group',
-                options: step.type === 'group' ? step.options : [step.options[0], createOption({ placementId: 'fh', spinId: 'top' })],
+                options: step.options,
               })
             }
           >
@@ -1174,7 +1174,7 @@ function App() {
                   index={stepIndex}
                   total={selectedProgram.steps.length}
                   isExpanded={step.id === expandedStepId}
-                  onToggleExpand={() => setExpandedStepId(step.id)}
+                  onToggleExpand={() => setExpandedStepId((current) => (current === step.id ? null : step.id))}
                   onChangeStep={(patch) => updateStep(stepIndex, patch)}
                   onDuplicate={() => duplicateStep(stepIndex)}
                   onDelete={() => deleteStep(stepIndex)}
