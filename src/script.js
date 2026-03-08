@@ -192,19 +192,23 @@ function enableButton(id){
 async function write(arr,nextState){
     if(nextState==null || nextState == undefined)
         throw new Error("no new state specified when writing command!");
-    if(inProgress == undefined){
-        if(!(arr instanceof Uint8Array)){
-            arr = new Uint8Array(arr);
-        }
-        console.log("writing in state: ",state,"message=",arr,"new state: ",nextState);
-        state = nextState;
-        inProgress = writeCharacteristic.writeValue(arr);        
-    }else {
-        const _ = await inProgress;
-        //console.log("write done of",arr);
-        inProgress = undefined;
-        write(arr,nextState);
-    }    
+    if(!(arr instanceof Uint8Array)){
+        arr = new Uint8Array(arr);
+    }
+    const queued = (inProgress || Promise.resolve())
+        .catch((err) => {
+            console.error("recovering write queue after failure", err);
+        })
+        .then(() => {
+            console.log("writing in state: ",state,"message=",arr,"new state: ",nextState);
+            state = nextState;
+            return writeCharacteristic.writeValue(arr).catch((err) => {
+                console.error("write failed in state: ", state, "new state:", nextState, err);
+                throw err;
+            });
+        });
+    inProgress = queued.catch(() => {});
+    return queued;
 };
 
 let serviceUuid = 0xfeff;
