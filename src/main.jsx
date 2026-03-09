@@ -853,8 +853,9 @@ function useNovaBotController() {
         if (!writeRef.current) {
           throw new Error('Write characteristic is not ready.');
         }
-        await writeRef.current.writeValue(normalized);
+        // Match the legacy controller: notifications can arrive before the write promise settles.
         applyStage(nextStage);
+        await writeRef.current.writeValue(normalized);
       })
       .catch((error) => {
         console.error(error);
