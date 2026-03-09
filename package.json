@@ -3,8 +3,8 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "build": "esbuild src/main.jsx --bundle --format=iife --target=es2020 --minify --outfile=js/main.js",
-    "watch": "esbuild src/main.jsx --bundle --format=iife --target=es2020 --outfile=js/main.js --watch"
+    "build": "node scripts/esbuild.mjs",
+    "watch": "node scripts/esbuild.mjs --watch"
   },
   "dependencies": {
     "react": "^19.1.1",

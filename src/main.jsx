@@ -1,5 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import {
+  BUILD_DIRTY,
+  BUILD_GIT_HASH,
+  BUILD_ID,
+  BUILD_LABEL,
+  BUILD_SOURCE_HASH,
+  BUILD_TIME,
+} from 'virtual:build-meta';
 
 const STORAGE_KEY = 'nova-programs-json-v1';
 const SERVICE_ID = '02f00000-0000-0000-0000-00000000fe00';
@@ -14,6 +22,7 @@ const CONTROL = {
 const CHALLENGE_SALT = 'Mjgx1jAwXDBaMFcxCz3JBgNVBAYT4kJF7Rkw';
 const TEXT_DECODER = new TextDecoder();
 const TEXT_ENCODER = new TextEncoder();
+const DEBUG_NAMESPACE = 'nova-debug';
 
 const SPEED_OPTIONS = [
   { id: 'blistering', label: 'Blistering', base: 6400 },
@@ -364,6 +373,15 @@ function canChangeDrill(currentStep, nextStep) {
 
 function packetToHex(value) {
   return Array.from(value).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function debugLog(event, details = {}) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${DEBUG_NAMESPACE}] ${event}`, {
+    buildId: BUILD_ID,
+    timestamp,
+    ...details,
+  });
 }
 
 function parseNotification(value) {
@@ -965,6 +983,12 @@ function useNovaBotController() {
   const singleShotTestRef = useRef(false);
 
   function clearRunTracking() {
+    debugLog('controller.clearRunTracking', {
+      currentStepIndex: currentStepIndexRef.current,
+      overallScheduledSteps: scheduleRef.current.length,
+      restartPending: restartPendingRef.current,
+      singleShotTest: singleShotTestRef.current,
+    });
     scheduleRef.current = [];
     currentStepIndexRef.current = 0;
     currentStepBallsRef.current = 0;
@@ -975,6 +999,11 @@ function useNovaBotController() {
   }
 
   function applyStage(nextStage) {
+    const previousStage = protocolStageRef.current;
+    debugLog('controller.stage', {
+      from: previousStage,
+      to: nextStage,
+    });
     protocolStageRef.current = nextStage;
     setStage(nextStage);
     const labels = {
@@ -1004,11 +1033,21 @@ function useNovaBotController() {
           throw new Error('Write characteristic is not ready.');
         }
         // Match the legacy controller: notifications can arrive before the write promise settles.
+        debugLog('robot.tx', {
+          fromStage: protocolStageRef.current,
+          nextStage,
+          payloadHex: packetToHex(normalized),
+          payloadLength: normalized.length,
+        });
         applyStage(nextStage);
         await writeRef.current.writeValue(normalized);
       })
       .catch((error) => {
         console.error(error);
+        debugLog('robot.tx.error', {
+          message: error.message || String(error),
+          nextStage,
+        });
         setLastError(error.message || String(error));
         throw error;
       });
@@ -1018,18 +1057,31 @@ function useNovaBotController() {
 
   function handleDrillStatus(packet) {
     if (packet.ballIdx === lastBallIdxRef.current) {
+      debugLog('robot.drillStatus.duplicate', {
+        packet,
+        currentStepIndex: currentStepIndexRef.current,
+      });
       return;
     }
     lastBallIdxRef.current = packet.ballIdx;
     const schedule = scheduleRef.current;
     if (!schedule.length) {
+      debugLog('robot.drillStatus.ignoredNoSchedule', { packet });
       return;
     }
     const currentStep = schedule[currentStepIndexRef.current];
     currentStepBallsRef.current += 1;
+    debugLog('robot.drillStatus', {
+      packet,
+      currentStepIndex: currentStepIndexRef.current,
+      currentStepBalls: currentStepBallsRef.current,
+      currentStepRepetitions: currentStep.repetitions,
+      scheduleLength: schedule.length,
+    });
     setCounters((previous) => ({ stepBalls: currentStepBallsRef.current, overallBalls: previous.overallBalls + 1 }));
     if (singleShotTestRef.current) {
       singleShotTestRef.current = false;
+      debugLog('controller.singleShot.complete', { packet });
       queueWrite(CONTROL.stop, 'stop-requested').catch(() => null);
       return;
     }
@@ -1044,15 +1096,31 @@ function useNovaBotController() {
       // The device can restart ball indexes when a drill is swapped in place.
       // Clear the dedupe marker so the next shot from the new step is not ignored.
       lastBallIdxRef.current = null;
+      debugLog('controller.step.advance', {
+        strategy: 'change-drill',
+        fromStepIndex: nextIndex === 0 ? schedule.length - 1 : nextIndex - 1,
+        toStepIndex: nextIndex,
+        nextStep,
+      });
       queueWrite(createChangeDrillPayload(nextStep), 'shooting').catch(() => null);
     } else {
       restartPendingRef.current = true;
+      debugLog('controller.step.advance', {
+        strategy: 'restart-drill',
+        fromStepIndex: nextIndex === 0 ? schedule.length - 1 : nextIndex - 1,
+        toStepIndex: nextIndex,
+        nextStep,
+      });
       queueWrite(CONTROL.stop, 'shooting-restart').catch(() => null);
     }
   }
 
   function handleNotification(event) {
     const packet = parseNotification(event.target.value);
+    debugLog('robot.rx', {
+      stage: protocolStageRef.current,
+      packet,
+    });
     switch (protocolStageRef.current) {
       case 'initial':
         if (packet.type === 'request-challenge') {
@@ -1080,6 +1148,10 @@ function useNovaBotController() {
           if (schedule.length) {
             restartPendingRef.current = false;
             lastBallIdxRef.current = null;
+            debugLog('controller.restart.ready', {
+              stepIndex: currentStepIndexRef.current,
+              nextStep: schedule[currentStepIndexRef.current],
+            });
             queueWrite(createDrillPayload(schedule[currentStepIndexRef.current]), 'shooting').catch(() => null);
           }
         }
@@ -1112,14 +1184,20 @@ function useNovaBotController() {
     }
     try {
       setLastError('');
+      debugLog('controller.connect.start');
       applyStage('connecting');
       const device = await navigator.bluetooth.requestDevice({
         filters: [{ services: [0xfeff] }],
         optionalServices: [SERVICE_ID],
       });
       deviceRef.current = device;
+      debugLog('controller.connect.deviceSelected', {
+        deviceId: device.id,
+        deviceName: device.name || 'Nova Bot',
+      });
       setDeviceName(device.name || 'Nova Bot');
       device.addEventListener('gattserverdisconnected', () => {
+        debugLog('controller.connect.disconnected');
         if (notifyRef.current && listenerRef.current) {
           notifyRef.current.removeEventListener('characteristicvaluechanged', listenerRef.current);
         }
@@ -1138,6 +1216,10 @@ function useNovaBotController() {
       if (!notifyRef.current || !writeRef.current) {
         throw new Error('Could not find Nova bot characteristics.');
       }
+      debugLog('controller.connect.characteristicsReady', {
+        notifyId: notifyRef.current.uuid,
+        writeId: writeRef.current.uuid,
+      });
       await notifyRef.current.startNotifications();
       listenerRef.current = handleNotification;
       notifyRef.current.addEventListener('characteristicvaluechanged', listenerRef.current);
@@ -1145,12 +1227,18 @@ function useNovaBotController() {
       await queueWrite([0x07, 0, 0, 0], 'initial');
     } catch (error) {
       console.error(error);
+      debugLog('controller.connect.error', {
+        message: error.message || String(error),
+      });
       setLastError(error.message || String(error));
       applyStage('disconnected');
     }
   }
 
   function disconnect() {
+    debugLog('controller.disconnect.requested', {
+      connected: Boolean(deviceRef.current?.gatt?.connected),
+    });
     if (deviceRef.current?.gatt?.connected) {
       deviceRef.current.gatt.disconnect();
     } else {
@@ -1171,6 +1259,12 @@ function useNovaBotController() {
     clearRunTracking();
     singleShotTestRef.current = false;
     scheduleRef.current = schedule;
+    debugLog('controller.runProgram', {
+      programId: program.id,
+      programName: program.name,
+      scheduleLength: schedule.length,
+      schedulePreview: schedulePreviewText(program),
+    });
     queueWrite(createDrillPayload(schedule[0]), 'shooting').catch(() => null);
   }
 
@@ -1187,17 +1281,23 @@ function useNovaBotController() {
     clearRunTracking();
     singleShotTestRef.current = true;
     scheduleRef.current = [scheduledStep];
+    debugLog('controller.testStep', {
+      stepId: step.id,
+      schedulePreview: schedulePreviewText({ steps: [step] }),
+    });
     queueWrite(createDrillPayload(scheduledStep), 'shooting').catch(() => null);
   }
 
   function pauseProgram() {
     if (protocolStageRef.current === 'shooting') {
+      debugLog('controller.pause.requested');
       queueWrite(CONTROL.pause, 'pause').catch(() => null);
     }
   }
 
   function resumeProgram() {
     if (protocolStageRef.current === 'pause') {
+      debugLog('controller.resume.requested');
       queueWrite(CONTROL.resume, 'shooting').catch(() => null);
     }
   }
@@ -1205,9 +1305,18 @@ function useNovaBotController() {
   function stopProgram() {
     if (['shooting', 'pause', 'shooting-restart'].includes(protocolStageRef.current)) {
       restartPendingRef.current = false;
+      debugLog('controller.stop.requested', {
+        stage: protocolStageRef.current,
+      });
       queueWrite(CONTROL.stop, 'stop-requested').catch(() => null);
     }
   }
+
+  useEffect(() => {
+    if (lastError) {
+      debugLog('controller.error', { message: lastError });
+    }
+  }, [lastError]);
 
   return {
     stage,
@@ -1247,10 +1356,44 @@ function App() {
   );
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__NOVA_BUILD__ = {
+        id: BUILD_ID,
+        label: BUILD_LABEL,
+        builtAt: BUILD_TIME,
+        gitHash: BUILD_GIT_HASH,
+        sourceHash: BUILD_SOURCE_HASH,
+        dirty: BUILD_DIRTY,
+      };
+    }
+    debugLog('app.boot', {
+      buildId: BUILD_ID,
+      buildLabel: BUILD_LABEL,
+      builtAt: BUILD_TIME,
+      gitHash: BUILD_GIT_HASH,
+      sourceHash: BUILD_SOURCE_HASH,
+      dirty: BUILD_DIRTY,
+    });
+  }, []);
+
+  useEffect(() => {
     if (!selectedProgram && store.programs[0]) {
       setStore((previous) => ({ ...previous, selectedProgramId: previous.programs[0].id }));
     }
   }, [selectedProgram, store.programs]);
+
+  useEffect(() => {
+    debugLog('app.state', {
+      screen,
+      programMode,
+      selectedProgramId: store.selectedProgramId,
+      programCount: store.programs.length,
+      editingStepIndex,
+      selectedProgramName: selectedProgram?.name || null,
+      selectedProgramSteps: selectedProgram?.steps.length || 0,
+      botStage: bot.stage,
+    });
+  }, [bot.stage, editingStepIndex, programMode, screen, selectedProgram, store.programs.length, store.selectedProgramId]);
 
 
   function updateSelectedProgram(transform) {
@@ -1453,6 +1596,9 @@ function App() {
 
   return (
     <div className="app-shell">
+      <div className="app-build-badge" title={`Built ${BUILD_TIME}`}>
+        {BUILD_LABEL}
+      </div>
       {screen === 'program-list' ? (
         <main className="program-list-screen panel">
           <div className="panel-head">

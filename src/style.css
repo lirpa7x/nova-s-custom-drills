@@ -71,6 +71,23 @@ button:disabled {
   padding: 24px;
 }
 
+.app-build-badge {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 40;
+  max-width: min(70vw, 360px);
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(31, 47, 42, 0.78);
+  color: #fdf8ef;
+  font-family: 'Courier New', monospace;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  box-shadow: 0 10px 30px rgba(31, 47, 42, 0.18);
+  backdrop-filter: blur(12px);
+}
+
 .shell {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 360px;
@@ -574,6 +591,13 @@ button:disabled {
 @media (max-width: 720px) {
   #app {
     padding: 14px;
+  }
+
+  .app-build-badge {
+    top: 8px;
+    right: 8px;
+    max-width: calc(100vw - 16px);
+    font-size: 0.72rem;
   }
 
   .sidebar,
