@@ -250,14 +250,18 @@ function createChangeDrillPayload(step) {
   return message;
 }
 
-function buildSchedule(program) {
-  return program.steps.map((step) => ({
+function buildScheduledStep(step) {
+  return {
     id: step.id,
     random: step.type === 'group',
     repetitions: step.repetitions,
     ballPayloads: step.options.map((option) => createBallPayload(optionToRobotBall(option, step.repetitions))),
     optionCount: step.options.length,
-  }));
+  };
+}
+
+function buildSchedule(program) {
+  return program.steps.map((step) => buildScheduledStep(step));
 }
 
 function schedulePreviewText(program) {
@@ -574,6 +578,9 @@ function OptionCard({ option, index, group, onChange, onDelete, compact = false,
 function CompactStepRow({
   step,
   index,
+  showTestButton,
+  canTestButton,
+  onTest,
   viewMode,
   onChangeStep,
   onEdit,
@@ -631,6 +638,11 @@ function CompactStepRow({
         )}
       </button>
       <div className="compact-step-row__actions">
+        {showTestButton ? (
+          <button type="button" className="secondary-button" onClick={onTest} disabled={!canTestButton}>
+            Test
+          </button>
+        ) : null}
         {viewMode ? null : (
           <>
             <button type="button" className="ghost-button" onClick={onEdit}>
@@ -1002,6 +1014,20 @@ function useNovaBotController() {
     queueWrite(createDrillPayload(schedule[0]), 'shooting').catch(() => null);
   }
 
+  function testStep(step) {
+    if (protocolStageRef.current !== 'standby') {
+      return;
+    }
+    const scheduledStep = buildScheduledStep(step);
+    if (!scheduledStep.ballPayloads.length) {
+      setLastError('Add at least one ball before testing.');
+      return;
+    }
+    setLastError('');
+    clearRunTracking();
+    queueWrite(createDrillPayload(scheduledStep), 'shooting').catch(() => null);
+  }
+
   function pauseProgram() {
     if (protocolStageRef.current === 'shooting') {
       queueWrite(CONTROL.pause, 'pause').catch(() => null);
@@ -1030,6 +1056,7 @@ function useNovaBotController() {
     connect,
     disconnect,
     runProgram,
+    testStep,
     pauseProgram,
     resumeProgram,
     stopProgram,
@@ -1259,6 +1286,7 @@ function App() {
   }
 
   const connected = bot.stage !== 'disconnected';
+  const canTestStep = bot.stage === 'standby';
   const viewMode = programMode === 'view';
 
   return (
@@ -1334,6 +1362,9 @@ function App() {
                   key={step.id}
                   step={step}
                   index={stepIndex}
+                  showTestButton={connected}
+                  canTestButton={canTestStep}
+                  onTest={() => bot.testStep(step)}
                   viewMode={viewMode}
                   onChangeStep={(patch) => updateStep(stepIndex, patch)}
                   onEdit={() => openStepEditor(stepIndex)}
