@@ -1087,7 +1087,7 @@ function useNovaBotController() {
     clearRunTracking();
     singleShotTestRef.current = true;
     scheduleRef.current = [scheduledStep];
-    queueWrite(createDrillPayload(scheduledStep, { combinationCount: 1, minutes: 0 }), 'shooting').catch(() => null);
+    queueWrite(createDrillPayload(scheduledStep), 'shooting').catch(() => null);
   }
 
   function pauseProgram() {
