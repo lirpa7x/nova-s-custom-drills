@@ -818,6 +818,7 @@ function useNovaBotController() {
   const lastBallIdxRef = useRef(null);
   const restartPendingRef = useRef(false);
   const singleShotTestRef = useRef(false);
+  const singleShotStopQueuedRef = useRef(false);
 
   function clearRunTracking() {
     scheduleRef.current = [];
@@ -826,6 +827,7 @@ function useNovaBotController() {
     lastBallIdxRef.current = null;
     restartPendingRef.current = false;
     singleShotTestRef.current = false;
+    singleShotStopQueuedRef.current = false;
     setCounters({ stepBalls: 0, overallBalls: 0 });
   }
 
@@ -885,6 +887,7 @@ function useNovaBotController() {
     setCounters((previous) => ({ stepBalls: currentStepBallsRef.current, overallBalls: previous.overallBalls + 1 }));
     if (singleShotTestRef.current) {
       singleShotTestRef.current = false;
+      singleShotStopQueuedRef.current = true;
       queueWrite(CONTROL.stop, 'stop-requested').catch(() => null);
       return;
     }
@@ -943,6 +946,11 @@ function useNovaBotController() {
         }
         break;
       case 'shooting':
+        if (singleShotTestRef.current && !singleShotStopQueuedRef.current && packet.type === 'device-status' && packet.status === 'running') {
+          singleShotStopQueuedRef.current = true;
+          queueWrite(CONTROL.stop, 'stop-requested').catch(() => null);
+          return;
+        }
         if (packet.type === 'device-status' && packet.status === 'stopping') {
           clearRunTracking();
           applyStage('standby');
