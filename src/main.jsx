@@ -221,15 +221,17 @@ function createBallPayload(ball) {
   return new Uint8Array(buffer);
 }
 
-function createDrillPayload(step) {
+function createDrillPayload(step, overrides = {}) {
+  const combinationCount = overrides.combinationCount ?? (step.random ? 0 : 3);
+  const minutes = overrides.minutes ?? (step.random ? 10 : 0);
   const bytes = step.ballPayloads.length * 24;
   const buffer = new ArrayBuffer(7 + bytes);
   const view = new DataView(buffer);
   const message = new Uint8Array(buffer);
   view.setUint8(0, 0x81);
   view.setUint16(1, 4 + bytes, true);
-  view.setUint8(3, 3);
-  view.setUint16(4, 0, true);
+  view.setUint8(3, combinationCount);
+  view.setUint16(4, minutes, true);
   view.setUint8(6, step.random ? 1 : 0);
   step.ballPayloads.forEach((ballPayload, index) => {
     message.set(ballPayload, 7 + index * 24);
@@ -1037,7 +1039,7 @@ function useNovaBotController() {
     clearRunTracking();
     singleShotTestRef.current = true;
     scheduleRef.current = [scheduledStep];
-    queueWrite(createDrillPayload(scheduledStep), 'shooting').catch(() => null);
+    queueWrite(createDrillPayload(scheduledStep, { combinationCount: 1, minutes: 0 }), 'shooting').catch(() => null);
   }
 
   function pauseProgram() {
