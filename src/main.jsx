@@ -254,11 +254,18 @@ function createChangeDrillPayload(step) {
 
 function buildScheduledStep(step, overrides = {}) {
   const repetitions = overrides.repetitions ?? step.repetitions;
+  const cadence = overrides.cadence;
   return {
     id: step.id,
     random: step.type === 'group',
     repetitions,
-    ballPayloads: step.options.map((option) => createBallPayload(optionToRobotBall(option, repetitions))),
+    ballPayloads: step.options.map((option) => {
+      const robotBall = optionToRobotBall(option, repetitions);
+      if (cadence != null) {
+        robotBall.cadence = cadence;
+      }
+      return createBallPayload(robotBall);
+    }),
     optionCount: step.options.length,
   };
 }
@@ -1038,16 +1045,19 @@ function useNovaBotController() {
     if (protocolStageRef.current !== 'standby') {
       return;
     }
-    const scheduledStep = buildScheduledStep(step, { repetitions: 1 });
+    const scheduledStep = buildScheduledStep(step, { repetitions: 1, cadence: 0 });
     if (!scheduledStep.ballPayloads.length) {
       setLastError('Add at least one ball before testing.');
       return;
     }
     setLastError('');
     clearRunTracking();
-    singleShotTestRef.current = true;
+    singleShotTestRef.current = false;
+    singleShotStopQueuedRef.current = true;
     scheduleRef.current = [scheduledStep];
-    queueWrite(createDrillPayload(scheduledStep, { combinationCount: 1, minutes: 0 }), 'shooting').catch(() => null);
+    queueWrite(createDrillPayload(scheduledStep, { combinationCount: 1, minutes: 0 }), 'shooting')
+      .then(() => queueWrite(CONTROL.stop, 'stop-requested'))
+      .catch(() => null);
   }
 
   function pauseProgram() {
