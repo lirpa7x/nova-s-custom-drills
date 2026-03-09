@@ -587,6 +587,11 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--panel-strong);
+  touch-action: none;
+}
+
+.compact-step-row.is-touch-dragging {
+  outline: 2px dashed rgba(217, 95, 67, 0.5);
 }
 
 .compact-step-row__handle,
@@ -621,6 +626,11 @@ button:disabled {
   justify-content: space-between;
   gap: 8px;
   align-items: flex-start;
+}
+
+.compact-step-row__title-text {
+  display: grid;
+  gap: 2px;
 }
 
 .compact-step-row__main strong {

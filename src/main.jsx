@@ -576,23 +576,30 @@ function CompactStepRow({
   onDragStart,
   onDragOver,
   onDrop,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd,
 }) {
   return (
     <article
       className="compact-step-row"
+      data-step-index={index}
       draggable={!viewMode}
       onDragStart={() => onDragStart(index)}
       onDragOver={(event) => onDragOver(event, index)}
       onDrop={() => onDrop(index)}
+      onTouchStart={(event) => onTouchStart(event, index)}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
     >
-      <button type="button" className="compact-step-row__handle" aria-label={`Drag Ball ${index + 1}`} disabled={viewMode}>
+      <button type="button" className="compact-step-row__handle" aria-label={`Drag Ball ${index + 1}`}>
         <span aria-hidden="true">
           ⋮⋮
         </span>
       </button>
-      <button type="button" className="compact-step-row__main" onClick={onEdit} disabled={viewMode}>
+      <button type="button" className="compact-step-row__main" onClick={() => (!viewMode ? onEdit() : null)}>
         <span className="compact-step-row__title">
-          <span>
+          <span className="compact-step-row__title-text">
             <span className="eyebrow">Ball {index + 1}</span>
             <strong>{step.type === 'group' ? 'Random Group' : 'Single Ball'}</strong>
           </span>
@@ -973,6 +980,8 @@ function App() {
   const [editingStepIndex, setEditingStepIndex] = useState(null);
   const [editingStepDraft, setEditingStepDraft] = useState(null);
   const dragStepIndexRef = useRef(null);
+  const touchDragIndexRef = useRef(null);
+  const touchOverIndexRef = useRef(null);
   const bot = useNovaBotController();
 
   useEffect(() => {
@@ -1099,6 +1108,44 @@ function App() {
     }));
   }
 
+  function handleTouchStart(event, index) {
+    if (viewMode) {
+      return;
+    }
+    touchDragIndexRef.current = index;
+    touchOverIndexRef.current = index;
+    event.currentTarget.classList.add('is-touch-dragging');
+  }
+
+  function handleTouchMove(event) {
+    if (viewMode || touchDragIndexRef.current == null) {
+      return;
+    }
+    const touch = event.touches?.[0];
+    if (!touch) {
+      return;
+    }
+    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+    const stepEl = target?.closest?.('[data-step-index]');
+    if (!stepEl) {
+      return;
+    }
+    const overIndex = Number(stepEl.getAttribute('data-step-index'));
+    if (!Number.isNaN(overIndex)) {
+      touchOverIndexRef.current = overIndex;
+    }
+  }
+
+  function handleTouchEnd(event) {
+    event.currentTarget.classList.remove('is-touch-dragging');
+    if (viewMode) {
+      return;
+    }
+    reorderStep(touchDragIndexRef.current, touchOverIndexRef.current);
+    touchDragIndexRef.current = null;
+    touchOverIndexRef.current = null;
+  }
+
   function applyDraftStep(transform) {
     setEditingStepDraft((previous) => {
       if (!previous) {
@@ -1180,7 +1227,7 @@ function App() {
             </div>
             <div className="stacked-actions top-actions">
               <button type="button" className="pill-button" onClick={() => setProgramMode((mode) => (mode === 'view' ? 'edit' : 'view'))}>
-                Mode: {viewMode ? 'View' : 'Edit'}
+                {viewMode ? 'Edit' : 'View'}
               </button>
               <button type="button" className="secondary-button" onClick={duplicateProgram}>
                 Duplicate
@@ -1206,6 +1253,9 @@ function App() {
                     reorderStep(dragStepIndexRef.current, dropIndex);
                     dragStepIndexRef.current = null;
                   }}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
                 />
               ))}
             </div>
