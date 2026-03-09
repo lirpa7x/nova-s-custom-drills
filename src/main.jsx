@@ -541,7 +541,20 @@ function ProgramRow({ active, name, summary, onSelect }) {
   );
 }
 
-function OptionCard({ option, index, group, onChange, onDelete, compact = false, expanded = true, onEdit, onDone }) {
+function OptionCard({
+  option,
+  index,
+  group,
+  onChange,
+  onDelete,
+  compact = false,
+  expanded = true,
+  onEdit,
+  onDone,
+  showTestButton = false,
+  canTestButton = false,
+  onTest,
+}) {
   const wheels = deriveWheelSpeeds(option);
 
   return (
@@ -553,6 +566,11 @@ function OptionCard({ option, index, group, onChange, onDelete, compact = false,
         </div>
         {group ? (
           <div className="mini-actions">
+            {!expanded && showTestButton ? (
+              <button type="button" className="secondary-button" onClick={onTest} disabled={!canTestButton}>
+                Test
+              </button>
+            ) : null}
             <button type="button" className="secondary-button" onClick={expanded ? onDone : onEdit}>
               {expanded ? 'Done' : 'Edit'}
             </button>
@@ -574,6 +592,13 @@ function OptionCard({ option, index, group, onChange, onDelete, compact = false,
           <FieldSelect label="Cadence" value={option.cadenceId} options={CADENCE_OPTIONS} onChange={(value) => onChange({ cadenceId: value })} />
         </div>
       )}
+      {group && expanded && showTestButton ? (
+        <div className="option-card__footer">
+          <button type="button" className="secondary-button" onClick={onTest} disabled={!canTestButton}>
+            Test
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -667,7 +692,7 @@ function CompactStepRow({
   );
 }
 
-function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave }) {
+function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave, showTestButton, canTestButton, onTestStep }) {
   const [editingOptionIndex, setEditingOptionIndex] = useState(null);
 
   useEffect(() => {
@@ -727,6 +752,14 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave })
     });
   }
 
+  function testDraftOption(option) {
+    onTestStep({
+      ...draft,
+      type: 'ball',
+      options: [deepClone(option)],
+    });
+  }
+
   return (
     <main className="editor-screen editor-screen--ball panel">
       <div className="ball-editor-head">
@@ -780,6 +813,9 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave })
             expanded={draft.type !== 'group' || editingOptionIndex === optionIndex}
             onEdit={() => setEditingOptionIndex(optionIndex)}
             onDone={() => setEditingOptionIndex(null)}
+            showTestButton={showTestButton}
+            canTestButton={canTestButton}
+            onTest={() => testDraftOption(option)}
           />
         ))}
       </div>
@@ -795,6 +831,11 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave })
           options={REPETITION_OPTIONS.map((option) => ({ ...option, id: String(option.value) }))}
           onChange={(value) => onChangeDraft((previous) => ({ ...previous, repetitions: Number(value) }))}
         />
+        {draft.type === 'ball' && showTestButton ? (
+          <button type="button" className="secondary-button" onClick={() => onTestStep(deepClone(draft))} disabled={!canTestButton}>
+            Test
+          </button>
+        ) : null}
       </div>
     </main>
   );
@@ -1464,6 +1505,9 @@ function App() {
           onChangeDraft={applyDraftStep}
           onCancel={cancelEditingStep}
           onSave={saveEditingStep}
+          showTestButton={connected}
+          canTestButton={canTestStep}
+          onTestStep={bot.testStep}
         />
       ) : null}
     </div>
