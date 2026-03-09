@@ -250,12 +250,13 @@ function createChangeDrillPayload(step) {
   return message;
 }
 
-function buildScheduledStep(step) {
+function buildScheduledStep(step, overrides = {}) {
+  const repetitions = overrides.repetitions ?? step.repetitions;
   return {
     id: step.id,
     random: step.type === 'group',
-    repetitions: step.repetitions,
-    ballPayloads: step.options.map((option) => createBallPayload(optionToRobotBall(option, step.repetitions))),
+    repetitions,
+    ballPayloads: step.options.map((option) => createBallPayload(optionToRobotBall(option, repetitions))),
     optionCount: step.options.length,
   };
 }
@@ -814,6 +815,7 @@ function useNovaBotController() {
   const currentStepBallsRef = useRef(0);
   const lastBallIdxRef = useRef(null);
   const restartPendingRef = useRef(false);
+  const singleShotTestRef = useRef(false);
 
   function clearRunTracking() {
     scheduleRef.current = [];
@@ -821,6 +823,7 @@ function useNovaBotController() {
     currentStepBallsRef.current = 0;
     lastBallIdxRef.current = null;
     restartPendingRef.current = false;
+    singleShotTestRef.current = false;
     setCounters({ stepBalls: 0, overallBalls: 0 });
   }
 
@@ -878,6 +881,11 @@ function useNovaBotController() {
     const currentStep = schedule[currentStepIndexRef.current];
     currentStepBallsRef.current += 1;
     setCounters((previous) => ({ stepBalls: currentStepBallsRef.current, overallBalls: previous.overallBalls + 1 }));
+    if (singleShotTestRef.current) {
+      singleShotTestRef.current = false;
+      queueWrite(CONTROL.stop, 'stop-requested').catch(() => null);
+      return;
+    }
     if (currentStepBallsRef.current < currentStep.repetitions) {
       return;
     }
@@ -1011,6 +1019,7 @@ function useNovaBotController() {
     }
     setLastError('');
     clearRunTracking();
+    singleShotTestRef.current = false;
     scheduleRef.current = schedule;
     queueWrite(createDrillPayload(schedule[0]), 'shooting').catch(() => null);
   }
@@ -1019,13 +1028,15 @@ function useNovaBotController() {
     if (protocolStageRef.current !== 'standby') {
       return;
     }
-    const scheduledStep = buildScheduledStep(step);
+    const scheduledStep = buildScheduledStep(step, { repetitions: 1 });
     if (!scheduledStep.ballPayloads.length) {
       setLastError('Add at least one ball before testing.');
       return;
     }
     setLastError('');
     clearRunTracking();
+    singleShotTestRef.current = true;
+    scheduleRef.current = [scheduledStep];
     queueWrite(createDrillPayload(scheduledStep), 'shooting').catch(() => null);
   }
 
