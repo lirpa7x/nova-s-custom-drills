@@ -523,45 +523,50 @@ function FieldSelect({ label, value, options, onChange }) {
   );
 }
 
-function ProgramRow({ active, name, summary, onSelect, onDelete }) {
+function ProgramRow({ active, name, summary, onSelect }) {
   return (
     <div className={`program-row ${active ? 'is-active' : ''}`}>
       <button className="program-row__select" type="button" onClick={onSelect}>
         <span>{name}</span>
         <small className="program-row__summary">{summary}</small>
       </button>
-      <button className="ghost-button danger-text" type="button" onClick={onDelete} aria-label={`Delete ${name}`}>
-        Delete
-      </button>
     </div>
   );
 }
 
-function OptionCard({ option, index, group, onChange, onDelete, compact = false }) {
+function OptionCard({ option, index, group, onChange, onDelete, compact = false, expanded = true, onEdit, onDone }) {
   const wheels = deriveWheelSpeeds(option);
+
   return (
-    <div className={`option-card ${compact ? 'option-card--compact' : ''}`}>
+    <div className={`option-card ${compact ? 'option-card--compact' : ''} ${group ? 'option-card--group' : ''} ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
       <div className="option-card__header">
-        <div>
+        <div className="option-card__heading">
           <p className="eyebrow">{group ? `Option ${String.fromCharCode(65 + index)}` : 'Ball Setup'}</p>
           <h4>{optionSummary(option)}</h4>
         </div>
         {group ? (
           <div className="mini-actions">
+            <button type="button" className="secondary-button" onClick={expanded ? onDone : onEdit}>
+              {expanded ? 'Done' : 'Edit'}
+            </button>
             <button type="button" className="ghost-button danger-text" onClick={onDelete}>
               Remove
             </button>
           </div>
         ) : null}
       </div>
-      <div className="option-card__meta">Upper {wheels.upperWheel} rpm · Lower {wheels.lowerWheel} rpm</div>
-      <div className="field-grid">
-        <FieldSelect label="Speed" value={option.speedId} options={SPEED_OPTIONS} onChange={(value) => onChange({ speedId: value })} />
-        <FieldSelect label="Spin" value={option.spinId} options={SPIN_OPTIONS} onChange={(value) => onChange({ spinId: value })} />
-        <FieldSelect label="Height" value={option.heightId} options={HEIGHT_OPTIONS} onChange={(value) => onChange({ heightId: value })} />
-        <FieldSelect label="Placement" value={option.placementId} options={PLACEMENT_OPTIONS} onChange={(value) => onChange({ placementId: value })} />
-        <FieldSelect label="Cadence" value={option.cadenceId} options={CADENCE_OPTIONS} onChange={(value) => onChange({ cadenceId: value })} />
-      </div>
+      {group && !expanded ? null : (
+        <div className="option-card__meta">Upper {wheels.upperWheel} rpm · Lower {wheels.lowerWheel} rpm</div>
+      )}
+      {group && !expanded ? null : (
+        <div className="field-grid">
+          <FieldSelect label="Speed" value={option.speedId} options={SPEED_OPTIONS} onChange={(value) => onChange({ speedId: value })} />
+          <FieldSelect label="Spin" value={option.spinId} options={SPIN_OPTIONS} onChange={(value) => onChange({ spinId: value })} />
+          <FieldSelect label="Height" value={option.heightId} options={HEIGHT_OPTIONS} onChange={(value) => onChange({ heightId: value })} />
+          <FieldSelect label="Placement" value={option.placementId} options={PLACEMENT_OPTIONS} onChange={(value) => onChange({ placementId: value })} />
+          <FieldSelect label="Cadence" value={option.cadenceId} options={CADENCE_OPTIONS} onChange={(value) => onChange({ cadenceId: value })} />
+        </div>
+      )}
     </div>
   );
 }
@@ -585,17 +590,21 @@ function CompactStepRow({
     <article
       className={`compact-step-row ${viewMode ? 'is-view' : ''}`}
       data-step-index={index}
-      draggable={!viewMode}
-      onDragStart={() => onDragStart(index)}
       onDragOver={(event) => onDragOver(event, index)}
       onDrop={() => onDrop(index)}
-      onTouchStart={(event) => onTouchStart(event, index)}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      onTouchCancel={onTouchCancel}
     >
       {!viewMode ? (
-        <button type="button" className="compact-step-row__handle" aria-label={`Drag Ball ${index + 1}`}>
+        <button
+          type="button"
+          className="compact-step-row__handle"
+          aria-label={`Drag Ball ${index + 1}`}
+          draggable={!viewMode}
+          onDragStart={() => onDragStart(index)}
+          onTouchStart={(event) => onTouchStart(event, index)}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          onTouchCancel={onTouchCancel}
+        >
           <span aria-hidden="true">
             ⋮⋮
           </span>
@@ -644,6 +653,22 @@ function CompactStepRow({
 }
 
 function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave }) {
+  const [editingOptionIndex, setEditingOptionIndex] = useState(null);
+
+  useEffect(() => {
+    setEditingOptionIndex(null);
+  }, [draft?.id]);
+
+  useEffect(() => {
+    if (!draft || draft.type !== 'group') {
+      setEditingOptionIndex(null);
+      return;
+    }
+    if (editingOptionIndex != null && editingOptionIndex >= draft.options.length) {
+      setEditingOptionIndex(null);
+    }
+  }, [draft, draft?.type, draft?.options?.length, editingOptionIndex]);
+
   if (!draft) {
     return null;
   }
@@ -656,14 +681,25 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave })
   }
 
   function addOptionDraft() {
+    const nextIndex = draft.options.length;
     onChangeDraft((previous) => {
       previous.options.push(createOption({ placementId: 'fh', spinId: 'top' }));
       previous.type = 'group';
       return previous;
     });
+    setEditingOptionIndex(nextIndex);
   }
 
   function deleteOptionDraft(optionIndex) {
+    setEditingOptionIndex((current) => {
+      if (current == null) {
+        return null;
+      }
+      if (current === optionIndex) {
+        return null;
+      }
+      return current > optionIndex ? current - 1 : current;
+    });
     onChangeDraft((previous) => {
       previous.options.splice(optionIndex, 1);
       if (previous.options.length <= 1) {
@@ -693,22 +729,30 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave })
         </div>
       </div>
       <div className="step-card__toolbar step-card__toolbar--editor">
-        <FieldSelect
-          label="Repetitions"
-          value={String(draft.repetitions)}
-          options={REPETITION_OPTIONS.map((option) => ({ ...option, id: String(option.value) }))}
-          onChange={(value) => onChangeDraft((previous) => ({ ...previous, repetitions: Number(value) }))}
-        />
         <div className="pill-group">
-          <button type="button" className={`pill-button ${draft.type === 'ball' ? 'is-active' : ''}`} onClick={() => onChangeDraft((previous) => ({ ...previous, type: 'ball', options: [previous.options[0]] }))}>
+          <button
+            type="button"
+            className={`pill-button ${draft.type === 'ball' ? 'is-active' : ''}`}
+            onClick={() => {
+              setEditingOptionIndex(null);
+              onChangeDraft((previous) => ({ ...previous, type: 'ball', options: [previous.options[0]] }));
+            }}
+          >
             Single Ball
           </button>
-          <button type="button" className={`pill-button ${draft.type === 'group' ? 'is-active' : ''}`} onClick={() => onChangeDraft((previous) => ({ ...previous, type: 'group' }))}>
+          <button
+            type="button"
+            className={`pill-button ${draft.type === 'group' ? 'is-active' : ''}`}
+            onClick={() => {
+              setEditingOptionIndex(null);
+              onChangeDraft((previous) => ({ ...previous, type: 'group' }));
+            }}
+          >
             Random Group
           </button>
         </div>
       </div>
-      <div className="step-card__options">
+      <div className={`step-card__options ${draft.type === 'group' ? 'step-card__options--group' : ''}`}>
         {draft.options.map((option, optionIndex) => (
           <OptionCard
             key={option.id}
@@ -717,7 +761,10 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave })
             group={draft.type === 'group'}
             onChange={(patch) => updateOptionDraft(optionIndex, patch)}
             onDelete={() => deleteOptionDraft(optionIndex)}
-            compact
+            compact={draft.type !== 'group'}
+            expanded={draft.type !== 'group' || editingOptionIndex === optionIndex}
+            onEdit={() => setEditingOptionIndex(optionIndex)}
+            onDone={() => setEditingOptionIndex(null)}
           />
         ))}
       </div>
@@ -726,6 +773,14 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave })
           Add Option
         </button>
       ) : null}
+      <div className="ball-editor-footer">
+        <FieldSelect
+          label="Repetitions"
+          value={String(draft.repetitions)}
+          options={REPETITION_OPTIONS.map((option) => ({ ...option, id: String(option.value) }))}
+          onChange={(value) => onChangeDraft((previous) => ({ ...previous, repetitions: Number(value) }))}
+        />
+      </div>
     </main>
   );
 }
@@ -1122,13 +1177,14 @@ function App() {
       return;
     }
     const touch = event.touches?.[0];
+    const row = event.currentTarget.closest('[data-step-index]');
     touchDragIndexRef.current = index;
     touchOverIndexRef.current = index;
-    event.currentTarget.classList.add('is-touch-dragging');
-    if (touch) {
-      const ghost = event.currentTarget.cloneNode(true);
+    row?.classList.add('is-touch-dragging');
+    if (touch && row) {
+      const ghost = row.cloneNode(true);
       ghost.classList.add('touch-drag-ghost');
-      ghost.style.width = `${event.currentTarget.getBoundingClientRect().width}px`;
+      ghost.style.width = `${row.getBoundingClientRect().width}px`;
       ghost.style.left = `${touch.clientX}px`;
       ghost.style.top = `${touch.clientY}px`;
       document.body.appendChild(ghost);
@@ -1144,6 +1200,7 @@ function App() {
     if (!touch) {
       return;
     }
+    event.preventDefault();
     const target = document.elementFromPoint(touch.clientX, touch.clientY);
     const stepEl = target?.closest?.('[data-step-index]');
     if (!stepEl) {
@@ -1160,11 +1217,11 @@ function App() {
   }
 
   function handleTouchEnd(event) {
-    event.currentTarget.classList.remove('is-touch-dragging');
-    if (viewMode) {
-      return;
+    const row = event.currentTarget.closest('[data-step-index]');
+    row?.classList.remove('is-touch-dragging');
+    if (!viewMode) {
+      reorderStep(touchDragIndexRef.current, touchOverIndexRef.current);
     }
-    reorderStep(touchDragIndexRef.current, touchOverIndexRef.current);
     touchDragIndexRef.current = null;
     touchOverIndexRef.current = null;
     if (touchGhostRef.current) {
@@ -1226,7 +1283,6 @@ function App() {
                 name={program.name}
                 summary={programSummary(program)}
                 onSelect={() => selectProgram(program.id)}
-                onDelete={() => deleteProgram(program.id)}
               />
             ))}
           </div>
@@ -1236,10 +1292,15 @@ function App() {
       {screen === 'program-detail' && selectedProgram ? (
         <>
           <main className="program-detail-screen panel">
-            <div className="panel-head">
+            <div className="panel-head program-detail-head">
               <div className="stacked-actions">
                 <button type="button" className="secondary-button" onClick={() => setScreen('program-list')}>
                   ← Programs
+                </button>
+              </div>
+              <div className="stacked-actions">
+                <button type="button" className="pill-button" onClick={() => setProgramMode((mode) => (mode === 'view' ? 'edit' : 'view'))}>
+                  {viewMode ? 'Edit' : 'View'}
                 </button>
               </div>
             </div>
@@ -1252,14 +1313,21 @@ function App() {
               />
               <div className="summary-chip">{selectedProgram.steps.length} balls</div>
             </div>
-            <div className="stacked-actions top-actions">
-              <button type="button" className="pill-button" onClick={() => setProgramMode((mode) => (mode === 'view' ? 'edit' : 'view'))}>
-                {viewMode ? 'Edit' : 'View'}
-              </button>
-              <button type="button" className="secondary-button" onClick={duplicateProgram}>
-                Duplicate
-              </button>
-            </div>
+            {!viewMode ? (
+              <div className="stacked-actions top-actions">
+                <button type="button" className="secondary-button" onClick={duplicateProgram}>
+                  Duplicate
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button danger-text"
+                  onClick={() => deleteProgram(selectedProgram.id)}
+                  aria-label={`Delete ${selectedProgram.name}`}
+                >
+                  Delete
+                </button>
+              </div>
+            ) : null}
             <div className="step-list compact-step-list">
               {selectedProgram.steps.map((step, stepIndex) => (
                 <CompactStepRow
@@ -1287,11 +1355,13 @@ function App() {
                 />
               ))}
             </div>
-            <div className="composer-actions composer-actions--bottom">
-              <button type="button" className="primary-button" onClick={addBall}>
-                Add Ball
-              </button>
-            </div>
+            {!viewMode ? (
+              <div className="composer-actions composer-actions--bottom">
+                <button type="button" className="primary-button" onClick={addBall}>
+                  Add Ball
+                </button>
+              </div>
+            ) : null}
           </main>
 
           <section className="controller-dock panel">
