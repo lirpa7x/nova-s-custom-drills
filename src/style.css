@@ -590,6 +590,10 @@ button:disabled {
   touch-action: none;
 }
 
+.compact-step-row.is-view {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .compact-step-row.is-touch-dragging {
   outline: 2px dashed rgba(217, 95, 67, 0.5);
 }
@@ -641,9 +645,20 @@ button:disabled {
   margin: 0;
   font-size: 0.78rem;
   color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+}
+
+.compact-step-row__group-line {
+  display: block;
+}
+
+.touch-drag-ghost {
+  position: fixed;
+  z-index: 999;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  opacity: 0.92;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
 }
 
 .compact-step-row__actions {

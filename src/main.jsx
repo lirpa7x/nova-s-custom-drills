@@ -579,10 +579,11 @@ function CompactStepRow({
   onTouchStart,
   onTouchMove,
   onTouchEnd,
+  onTouchCancel,
 }) {
   return (
     <article
-      className="compact-step-row"
+      className={`compact-step-row ${viewMode ? 'is-view' : ''}`}
       data-step-index={index}
       draggable={!viewMode}
       onDragStart={() => onDragStart(index)}
@@ -591,12 +592,15 @@ function CompactStepRow({
       onTouchStart={(event) => onTouchStart(event, index)}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchCancel}
     >
-      <button type="button" className="compact-step-row__handle" aria-label={`Drag Ball ${index + 1}`}>
-        <span aria-hidden="true">
-          ⋮⋮
-        </span>
-      </button>
+      {!viewMode ? (
+        <button type="button" className="compact-step-row__handle" aria-label={`Drag Ball ${index + 1}`}>
+          <span aria-hidden="true">
+            ⋮⋮
+          </span>
+        </button>
+      ) : null}
       <button type="button" className="compact-step-row__main" onClick={() => (!viewMode ? onEdit() : null)}>
         <span className="compact-step-row__title">
           <span className="compact-step-row__title-text">
@@ -607,7 +611,11 @@ function CompactStepRow({
         </span>
         {step.type === 'group' ? (
           <span className="compact-step-row__summary">
-            {step.options.map((option) => optionSummary(option)).join(' | ')}
+            {step.options.map((option, optionIndex) => (
+              <span key={option.id} className="compact-step-row__group-line">
+                Option {String.fromCharCode(65 + optionIndex)}: {optionSummary(option)}
+              </span>
+            ))}
           </span>
         ) : (
           <span className="compact-step-row__summary">{optionSummary(step.options[0])}</span>
@@ -976,12 +984,13 @@ function useNovaBotController() {
 function App() {
   const [store, setStore] = useState(() => loadStore());
   const [screen, setScreen] = useState('program-list');
-  const [programMode, setProgramMode] = useState('edit');
+  const [programMode, setProgramMode] = useState('view');
   const [editingStepIndex, setEditingStepIndex] = useState(null);
   const [editingStepDraft, setEditingStepDraft] = useState(null);
   const dragStepIndexRef = useRef(null);
   const touchDragIndexRef = useRef(null);
   const touchOverIndexRef = useRef(null);
+  const touchGhostRef = useRef(null);
   const bot = useNovaBotController();
 
   useEffect(() => {
@@ -1112,9 +1121,19 @@ function App() {
     if (viewMode) {
       return;
     }
+    const touch = event.touches?.[0];
     touchDragIndexRef.current = index;
     touchOverIndexRef.current = index;
     event.currentTarget.classList.add('is-touch-dragging');
+    if (touch) {
+      const ghost = event.currentTarget.cloneNode(true);
+      ghost.classList.add('touch-drag-ghost');
+      ghost.style.width = `${event.currentTarget.getBoundingClientRect().width}px`;
+      ghost.style.left = `${touch.clientX}px`;
+      ghost.style.top = `${touch.clientY}px`;
+      document.body.appendChild(ghost);
+      touchGhostRef.current = ghost;
+    }
   }
 
   function handleTouchMove(event) {
@@ -1134,6 +1153,10 @@ function App() {
     if (!Number.isNaN(overIndex)) {
       touchOverIndexRef.current = overIndex;
     }
+    if (touchGhostRef.current) {
+      touchGhostRef.current.style.left = `${touch.clientX}px`;
+      touchGhostRef.current.style.top = `${touch.clientY}px`;
+    }
   }
 
   function handleTouchEnd(event) {
@@ -1144,6 +1167,10 @@ function App() {
     reorderStep(touchDragIndexRef.current, touchOverIndexRef.current);
     touchDragIndexRef.current = null;
     touchOverIndexRef.current = null;
+    if (touchGhostRef.current) {
+      touchGhostRef.current.remove();
+      touchGhostRef.current = null;
+    }
   }
 
   function applyDraftStep(transform) {
@@ -1256,6 +1283,7 @@ function App() {
                   onTouchStart={handleTouchStart}
                   onTouchMove={handleTouchMove}
                   onTouchEnd={handleTouchEnd}
+                  onTouchCancel={handleTouchEnd}
                 />
               ))}
             </div>
