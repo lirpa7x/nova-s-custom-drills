@@ -68,6 +68,10 @@ const REPETITION_OPTIONS = [
   { id: 'eight', label: '8x', value: 8 },
 ];
 
+const WHEEL_MIN = 400;
+const WHEEL_MAX = 7500;
+const WHEEL_STEP = 50;
+
 const DEFAULT_OPTION_STATE = {
   speedId: 'assertive',
   spinId: 'flat',
@@ -87,12 +91,66 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function createOption(overrides = {}) {
+function snapWheelSpeed(value) {
+  return clamp(Math.round(value / WHEEL_STEP) * WHEEL_STEP, WHEEL_MIN, WHEEL_MAX);
+}
+
+function pickClosestOption(options, target, valueKey) {
+  return options.reduce((closest, option) => {
+    if (!closest) {
+      return option;
+    }
+    return Math.abs(option[valueKey] - target) < Math.abs(closest[valueKey] - target) ? option : closest;
+  }, null);
+}
+
+function derivePresetWheelSpeeds(option) {
+  const speed = pickById(SPEED_OPTIONS, option.speedId);
+  const spin = pickById(SPIN_OPTIONS, option.spinId);
   return {
+    upperWheel: clamp(speed.base + spin.offset, WHEEL_MIN, WHEEL_MAX),
+    lowerWheel: clamp(speed.base - spin.offset, WHEEL_MIN, WHEEL_MAX),
+  };
+}
+
+function deriveOptionWheelProfile(option) {
+  const presetWheels = derivePresetWheelSpeeds(option);
+  const rawUpperWheel = Number(option.upperWheel);
+  const rawLowerWheel = Number(option.lowerWheel);
+  const upperWheel = Number.isFinite(rawUpperWheel) ? snapWheelSpeed(rawUpperWheel) : presetWheels.upperWheel;
+  const lowerWheel = Number.isFinite(rawLowerWheel) ? snapWheelSpeed(rawLowerWheel) : presetWheels.lowerWheel;
+  const speed = pickClosestOption(SPEED_OPTIONS, (upperWheel + lowerWheel) / 2, 'base');
+  const spin = pickClosestOption(SPIN_OPTIONS, (upperWheel - lowerWheel) / 2, 'offset');
+  return { upperWheel, lowerWheel, speed, spin };
+}
+
+function syncOptionWheelState(option) {
+  const { upperWheel, lowerWheel, speed, spin } = deriveOptionWheelProfile(option);
+  return {
+    ...option,
+    upperWheel,
+    lowerWheel,
+    speedId: speed.id,
+    spinId: spin.id,
+  };
+}
+
+function buildWheelPatch(option, patch) {
+  const next = syncOptionWheelState({ ...option, ...patch });
+  return {
+    upperWheel: next.upperWheel,
+    lowerWheel: next.lowerWheel,
+    speedId: next.speedId,
+    spinId: next.spinId,
+  };
+}
+
+function createOption(overrides = {}) {
+  return syncOptionWheelState({
     id: uid('option'),
     ...DEFAULT_OPTION_STATE,
     ...overrides,
-  };
+  });
 }
 
 function createBallStep(overrides = {}) {
@@ -161,7 +219,16 @@ function loadStore() {
     if (!parsed || !Array.isArray(parsed.programs) || parsed.programs.length === 0) {
       return createDemoStore();
     }
-    return parsed;
+    return {
+      ...parsed,
+      programs: parsed.programs.map((program) => ({
+        ...program,
+        steps: program.steps.map((step) => ({
+          ...step,
+          options: step.options.map((option) => syncOptionWheelState(option)),
+        })),
+      })),
+    };
   } catch (error) {
     console.warn('Failed to load program store, falling back to demo state.', error);
     return createDemoStore();
@@ -187,10 +254,7 @@ function pickById(options, id, fallback = options[0]) {
 }
 
 function deriveWheelSpeeds(option) {
-  const speed = pickById(SPEED_OPTIONS, option.speedId);
-  const spin = pickById(SPIN_OPTIONS, option.spinId);
-  const upperWheel = clamp(speed.base + spin.offset, 400, 7500);
-  const lowerWheel = clamp(speed.base - spin.offset, 400, 7500);
+  const { upperWheel, lowerWheel } = deriveOptionWheelProfile(option);
   return { upperWheel, lowerWheel };
 }
 
@@ -503,12 +567,13 @@ function buildChallengeResponse(serial, code) {
 }
 
 function optionSummary(option) {
+  const { speed, spin } = deriveOptionWheelProfile(option);
   return [
-    pickById(SPIN_OPTIONS, option.spinId).label,
+    spin.label,
     pickById(PLACEMENT_OPTIONS, option.placementId).label,
     pickById(HEIGHT_OPTIONS, option.heightId).label,
     pickById(CADENCE_OPTIONS, option.cadenceId).label,
-    pickById(SPEED_OPTIONS, option.speedId).label,
+    speed.label,
   ].join(' · ');
 }
 
@@ -533,6 +598,22 @@ function FieldSelect({ label, value, options, onChange }) {
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+function FieldRange({ label, value, min, max, step, onChange }) {
+  return (
+    <label className="field-range">
+      <div className="field-range__row">
+        <span>{label}</span>
+        <strong>{value} rpm</strong>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <div className="field-range__limits">
+        <small>{min}</small>
+        <small>{max}</small>
+      </div>
     </label>
   );
 }
@@ -562,7 +643,7 @@ function OptionCard({
   canTestButton = false,
   onTest,
 }) {
-  const wheels = deriveWheelSpeeds(option);
+  const wheels = deriveOptionWheelProfile(option);
 
   return (
     <div className={`option-card ${compact ? 'option-card--compact' : ''} ${group ? 'option-card--group' : ''} ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
@@ -588,12 +669,28 @@ function OptionCard({
         ) : null}
       </div>
       {group && !expanded ? null : (
-        <div className="option-card__meta">Upper {wheels.upperWheel} rpm · Lower {wheels.lowerWheel} rpm</div>
+        <div className="option-card__meta">
+          Upper {wheels.upperWheel} rpm · Lower {wheels.lowerWheel} rpm · {wheels.spin.label} · {wheels.speed.label}
+        </div>
       )}
       {group && !expanded ? null : (
         <div className="field-grid">
-          <FieldSelect label="Speed" value={option.speedId} options={SPEED_OPTIONS} onChange={(value) => onChange({ speedId: value })} />
-          <FieldSelect label="Spin" value={option.spinId} options={SPIN_OPTIONS} onChange={(value) => onChange({ spinId: value })} />
+          <FieldRange
+            label="Upper RPM"
+            value={wheels.upperWheel}
+            min={WHEEL_MIN}
+            max={WHEEL_MAX}
+            step={WHEEL_STEP}
+            onChange={(value) => onChange(buildWheelPatch(option, { upperWheel: value }))}
+          />
+          <FieldRange
+            label="Lower RPM"
+            value={wheels.lowerWheel}
+            min={WHEEL_MIN}
+            max={WHEEL_MAX}
+            step={WHEEL_STEP}
+            onChange={(value) => onChange(buildWheelPatch(option, { lowerWheel: value }))}
+          />
           <FieldSelect label="Height" value={option.heightId} options={HEIGHT_OPTIONS} onChange={(value) => onChange({ heightId: value })} />
           <FieldSelect label="Placement" value={option.placementId} options={PLACEMENT_OPTIONS} onChange={(value) => onChange({ placementId: value })} />
           <FieldSelect label="Cadence" value={option.cadenceId} options={CADENCE_OPTIONS} onChange={(value) => onChange({ cadenceId: value })} />
