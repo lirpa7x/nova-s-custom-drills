@@ -5,7 +5,6 @@ const STORAGE_KEY = 'nova-programs-json-v1';
 const SERVICE_ID = '02f00000-0000-0000-0000-00000000fe00';
 const NOTIFY_ID = '02f00000-0000-0000-0000-00000000ff02';
 const WRITE_ID = '02f00000-0000-0000-0000-00000000ff01';
-const TEST_STOP_DELAY_MS = 350;
 const CONTROL = {
   wake: [0x80, 1, 0, 0],
   stop: [0x80, 1, 0, 1],
@@ -867,7 +866,6 @@ function useNovaBotController() {
   const lastBallIdxRef = useRef(null);
   const restartPendingRef = useRef(false);
   const singleShotTestRef = useRef(false);
-  const singleShotStopQueuedRef = useRef(false);
 
   function clearRunTracking() {
     scheduleRef.current = [];
@@ -876,7 +874,6 @@ function useNovaBotController() {
     lastBallIdxRef.current = null;
     restartPendingRef.current = false;
     singleShotTestRef.current = false;
-    singleShotStopQueuedRef.current = false;
     setCounters({ stepBalls: 0, overallBalls: 0 });
   }
 
@@ -936,7 +933,6 @@ function useNovaBotController() {
     setCounters((previous) => ({ stepBalls: currentStepBallsRef.current, overallBalls: previous.overallBalls + 1 }));
     if (singleShotTestRef.current) {
       singleShotTestRef.current = false;
-      singleShotStopQueuedRef.current = true;
       queueWrite(CONTROL.stop, 'stop-requested').catch(() => null);
       return;
     }
@@ -1091,21 +1087,7 @@ function useNovaBotController() {
     clearRunTracking();
     singleShotTestRef.current = true;
     scheduleRef.current = [scheduledStep];
-    queueWrite(createDrillPayload(scheduledStep, { combinationCount: 1, minutes: 0 }), 'shooting')
-      .then(
-        () =>
-          new Promise((resolve) => {
-            window.setTimeout(resolve, TEST_STOP_DELAY_MS);
-          })
-      )
-      .then(() => {
-        if (protocolStageRef.current === 'shooting' && !singleShotStopQueuedRef.current) {
-          singleShotStopQueuedRef.current = true;
-          return queueWrite(CONTROL.stop, 'stop-requested');
-        }
-        return null;
-      })
-      .catch(() => null);
+    queueWrite(createDrillPayload(scheduledStep, { combinationCount: 1, minutes: 0 }), 'shooting').catch(() => null);
   }
 
   function pauseProgram() {
