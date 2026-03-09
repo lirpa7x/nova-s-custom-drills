@@ -523,11 +523,12 @@ function FieldSelect({ label, value, options, onChange }) {
   );
 }
 
-function ProgramRow({ active, name, onSelect, onDelete }) {
+function ProgramRow({ active, name, summary, onSelect, onDelete }) {
   return (
     <div className={`program-row ${active ? 'is-active' : ''}`}>
       <button className="program-row__select" type="button" onClick={onSelect}>
         <span>{name}</span>
+        <small className="program-row__summary">{summary}</small>
       </button>
       <button className="ghost-button danger-text" type="button" onClick={onDelete} aria-label={`Delete ${name}`}>
         Delete
@@ -536,7 +537,7 @@ function ProgramRow({ active, name, onSelect, onDelete }) {
   );
 }
 
-function OptionCard({ option, index, group, canMoveDown, onChange, onDelete, onMove, compact = false }) {
+function OptionCard({ option, index, group, onChange, onDelete, compact = false }) {
   const wheels = deriveWheelSpeeds(option);
   return (
     <div className={`option-card ${compact ? 'option-card--compact' : ''}`}>
@@ -551,16 +552,7 @@ function OptionCard({ option, index, group, canMoveDown, onChange, onDelete, onM
               Remove
             </button>
           </div>
-        ) : (
-          <div className="mini-actions">
-            <button type="button" className="ghost-button" onClick={() => onMove(-1)} disabled={index === 0}>
-              ↑
-            </button>
-            <button type="button" className="ghost-button" onClick={() => onMove(1)} disabled={!canMoveDown}>
-              ↓
-            </button>
-          </div>
-        )}
+        ) : null}
       </div>
       <div className="option-card__meta">Upper {wheels.upperWheel} rpm · Lower {wheels.lowerWheel} rpm</div>
       <div className="field-grid">
@@ -599,8 +591,13 @@ function CompactStepRow({
         </span>
       </button>
       <button type="button" className="compact-step-row__main" onClick={onEdit} disabled={viewMode}>
-        <span className="eyebrow">Ball {index + 1}</span>
-        <strong>{step.type === 'group' ? 'Random Group' : 'Single Ball'}</strong>
+        <span className="compact-step-row__title">
+          <span>
+            <span className="eyebrow">Ball {index + 1}</span>
+            <strong>{step.type === 'group' ? 'Random Group' : 'Single Ball'}</strong>
+          </span>
+          <span className="compact-step-row__meta">{step.repetitions}x</span>
+        </span>
         {step.type === 'group' ? (
           <span className="compact-step-row__summary">
             {step.options.map((option) => optionSummary(option)).join(' | ')}
@@ -610,7 +607,6 @@ function CompactStepRow({
         )}
       </button>
       <div className="compact-step-row__actions">
-        <div className="compact-step-row__meta">{step.repetitions}x</div>
         {viewMode ? null : (
           <>
             <button type="button" className="ghost-button" onClick={onEdit}>
@@ -665,13 +661,6 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave })
     });
   }
 
-  function moveOptionDraft(optionIndex, direction) {
-    onChangeDraft((previous) => {
-      previous.options = moveItem(previous.options, optionIndex, optionIndex + direction);
-      return previous;
-    });
-  }
-
   return (
     <main className="editor-screen editor-screen--ball panel">
       <div className="ball-editor-head">
@@ -711,10 +700,8 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave })
             option={option}
             index={optionIndex}
             group={draft.type === 'group'}
-            canMoveDown={draft.type !== 'group' && optionIndex < draft.options.length - 1}
             onChange={(patch) => updateOptionDraft(optionIndex, patch)}
             onDelete={() => deleteOptionDraft(optionIndex)}
-            onMove={(direction) => moveOptionDraft(optionIndex, direction)}
             compact
           />
         ))}
@@ -1163,6 +1150,7 @@ function App() {
                 key={program.id}
                 active={program.id === store.selectedProgramId}
                 name={program.name}
+                summary={programSummary(program)}
                 onSelect={() => selectProgram(program.id)}
                 onDelete={() => deleteProgram(program.id)}
               />
@@ -1190,13 +1178,9 @@ function App() {
               />
               <div className="summary-chip">{selectedProgram.steps.length} balls</div>
             </div>
-            <p className="muted">{programSummary(selectedProgram)}</p>
             <div className="stacked-actions top-actions">
-              <button type="button" className={`pill-button ${viewMode ? 'is-active' : ''}`} onClick={() => setProgramMode('view')}>
-                View
-              </button>
-              <button type="button" className={`pill-button ${!viewMode ? 'is-active' : ''}`} onClick={() => setProgramMode('edit')}>
-                Edit
+              <button type="button" className="pill-button" onClick={() => setProgramMode((mode) => (mode === 'view' ? 'edit' : 'view'))}>
+                Mode: {viewMode ? 'View' : 'Edit'}
               </button>
               <button type="button" className="secondary-button" onClick={duplicateProgram}>
                 Duplicate
