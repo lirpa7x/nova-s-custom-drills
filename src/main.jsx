@@ -1041,6 +1041,9 @@ function useNovaBotController() {
     currentStepIndexRef.current = nextIndex;
     currentStepBallsRef.current = 0;
     if (canChangeDrill(currentStep, nextStep)) {
+      // The device can restart ball indexes when a drill is swapped in place.
+      // Clear the dedupe marker so the next shot from the new step is not ignored.
+      lastBallIdxRef.current = null;
       queueWrite(createChangeDrillPayload(nextStep), 'shooting').catch(() => null);
     } else {
       restartPendingRef.current = true;
