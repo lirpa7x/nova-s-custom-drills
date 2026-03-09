@@ -549,6 +549,18 @@ button:disabled {
   margin: 12px 0;
 }
 
+.program-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.composer-actions--bottom {
+  margin-top: 10px;
+  justify-content: center;
+}
+
 .compact-step-list {
   gap: 8px;
 }
@@ -577,6 +589,15 @@ button:disabled {
   color: var(--muted);
 }
 
+.compact-step-row__meta {
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
 .compact-step-row__main {
   display: grid;
   gap: 2px;
@@ -603,6 +624,10 @@ button:disabled {
 
 .compact-step-row__actions .field-select span {
   font-size: 0.7rem;
+}
+
+.compact-step-row__actions .field-select span:empty {
+  display: none;
 }
 
 .compact-step-row__actions .field-select select {
@@ -636,16 +661,7 @@ button:disabled {
 }
 
 .program-detail-screen {
-  padding-bottom: 230px;
-}
-
-.preview-card--compact summary {
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.preview-card--compact pre {
-  min-height: 120px;
+  padding-bottom: 190px;
 }
 
 .editor-screen {
@@ -688,7 +704,7 @@ button:disabled {
 
   .compact-step-row__actions {
     grid-column: 1 / -1;
-    justify-content: space-between;
+    justify-content: flex-end;
   }
 
   .control-grid--dock {
@@ -702,5 +718,10 @@ button:disabled {
   .ball-editor-head__actions {
     width: 100%;
     justify-content: flex-end;
+  }
+
+  .program-name-row {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

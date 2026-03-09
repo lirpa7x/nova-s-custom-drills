@@ -60,12 +60,12 @@ const CADENCE_OPTIONS = [
 ];
 
 const REPETITION_OPTIONS = [
-  { id: 'single', label: '1 ball', value: 1 },
-  { id: 'double', label: '2 balls', value: 2 },
-  { id: 'triple', label: '3 balls', value: 3 },
-  { id: 'quad', label: '4 balls', value: 4 },
-  { id: 'six', label: '6 balls', value: 6 },
-  { id: 'eight', label: '8 balls', value: 8 },
+  { id: 'single', label: '1x', value: 1 },
+  { id: 'double', label: '2x', value: 2 },
+  { id: 'triple', label: '3x', value: 3 },
+  { id: 'quad', label: '4x', value: 4 },
+  { id: 'six', label: '6x', value: 6 },
+  { id: 'eight', label: '8x', value: 8 },
 ];
 
 const DEFAULT_OPTION_STATE = {
@@ -498,12 +498,14 @@ function optionSummary(option) {
   ].join(' · ');
 }
 
-function stepSummary(step) {
-  const lead = optionSummary(step.options[0]);
-  if (step.type === 'group') {
-    return `${lead} · random from ${step.options.length} options · ${step.repetitions} reps`;
+function programSummary(program) {
+  if (!program?.steps?.length) {
+    return 'No balls configured yet.';
   }
-  return `${lead} · ${step.repetitions} reps`;
+  const groups = program.steps.filter((step) => step.type === 'group').length;
+  const singles = program.steps.length - groups;
+  const totalReps = program.steps.reduce((sum, step) => sum + step.repetitions, 0);
+  return `${program.steps.length} balls · ${singles} single · ${groups} random groups · ${totalReps} total reps`;
 }
 
 function FieldSelect({ label, value, options, onChange }) {
@@ -545,17 +547,20 @@ function OptionCard({ option, index, group, canMoveDown, onChange, onDelete, onM
         </div>
         {group ? (
           <div className="mini-actions">
+            <button type="button" className="ghost-button danger-text" onClick={onDelete}>
+              Remove
+            </button>
+          </div>
+        ) : (
+          <div className="mini-actions">
             <button type="button" className="ghost-button" onClick={() => onMove(-1)} disabled={index === 0}>
               ↑
             </button>
             <button type="button" className="ghost-button" onClick={() => onMove(1)} disabled={!canMoveDown}>
               ↓
             </button>
-            <button type="button" className="ghost-button danger-text" onClick={onDelete}>
-              Remove
-            </button>
           </div>
-        ) : null}
+        )}
       </div>
       <div className="option-card__meta">Upper {wheels.upperWheel} rpm · Lower {wheels.lowerWheel} rpm</div>
       <div className="field-grid">
@@ -572,8 +577,10 @@ function OptionCard({ option, index, group, canMoveDown, onChange, onDelete, onM
 function CompactStepRow({
   step,
   index,
+  viewMode,
   onChangeStep,
   onEdit,
+  onDelete,
   onDragStart,
   onDragOver,
   onDrop,
@@ -581,31 +588,45 @@ function CompactStepRow({
   return (
     <article
       className="compact-step-row"
-      draggable
+      draggable={!viewMode}
       onDragStart={() => onDragStart(index)}
       onDragOver={(event) => onDragOver(event, index)}
       onDrop={() => onDrop(index)}
     >
-      <button type="button" className="compact-step-row__handle" aria-label={`Drag Ball ${index + 1}`}>
+      <button type="button" className="compact-step-row__handle" aria-label={`Drag Ball ${index + 1}`} disabled={viewMode}>
         <span aria-hidden="true">
           ⋮⋮
         </span>
       </button>
-      <button type="button" className="compact-step-row__main" onClick={onEdit}>
+      <button type="button" className="compact-step-row__main" onClick={onEdit} disabled={viewMode}>
         <span className="eyebrow">Ball {index + 1}</span>
         <strong>{step.type === 'group' ? 'Random Group' : 'Single Ball'}</strong>
-        <span className="compact-step-row__summary">{stepSummary(step)}</span>
+        {step.type === 'group' ? (
+          <span className="compact-step-row__summary">
+            {step.options.map((option) => optionSummary(option)).join(' | ')}
+          </span>
+        ) : (
+          <span className="compact-step-row__summary">{optionSummary(step.options[0])}</span>
+        )}
       </button>
       <div className="compact-step-row__actions">
-        <FieldSelect
-          label="Reps"
-          value={String(step.repetitions)}
-          options={REPETITION_OPTIONS.map((option) => ({ ...option, id: String(option.value) }))}
-          onChange={(value) => onChangeStep({ repetitions: Number(value) })}
-        />
-        <button type="button" className="ghost-button" onClick={onEdit}>
-          Edit
-        </button>
+        <div className="compact-step-row__meta">{step.repetitions}x</div>
+        {viewMode ? null : (
+          <>
+            <button type="button" className="ghost-button" onClick={onEdit}>
+              Edit
+            </button>
+            <button type="button" className="ghost-button danger-text" onClick={onDelete}>
+              Delete
+            </button>
+            <FieldSelect
+              label=""
+              value={String(step.repetitions)}
+              options={REPETITION_OPTIONS.map((option) => ({ ...option, id: String(option.value) }))}
+              onChange={(value) => onChangeStep({ repetitions: Number(value) })}
+            />
+          </>
+        )}
       </div>
     </article>
   );
@@ -690,7 +711,7 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave })
             option={option}
             index={optionIndex}
             group={draft.type === 'group'}
-            canMoveDown={optionIndex < draft.options.length - 1}
+            canMoveDown={draft.type !== 'group' && optionIndex < draft.options.length - 1}
             onChange={(patch) => updateOptionDraft(optionIndex, patch)}
             onDelete={() => deleteOptionDraft(optionIndex)}
             onMove={(direction) => moveOptionDraft(optionIndex, direction)}
@@ -700,7 +721,7 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave })
       </div>
       {draft.type === 'group' ? (
         <button type="button" className="secondary-button" onClick={addOptionDraft}>
-          Add Random Option
+          Add Option
         </button>
       ) : null}
     </main>
@@ -961,6 +982,7 @@ function useNovaBotController() {
 function App() {
   const [store, setStore] = useState(() => loadStore());
   const [screen, setScreen] = useState('program-list');
+  const [programMode, setProgramMode] = useState('edit');
   const [editingStepIndex, setEditingStepIndex] = useState(null);
   const [editingStepDraft, setEditingStepDraft] = useState(null);
   const dragStepIndexRef = useRef(null);
@@ -1050,6 +1072,16 @@ function App() {
     });
   }
 
+  function deleteStep(stepIndex) {
+    updateSelectedProgram((program) => {
+      if (program.steps.length <= 1) {
+        return program;
+      }
+      program.steps.splice(stepIndex, 1);
+      return program;
+    });
+  }
+
   function openStepEditor(stepIndex) {
     if (!selectedProgram) {
       return;
@@ -1108,8 +1140,8 @@ function App() {
     setScreen('program-detail');
   }
 
-  const legacyPreview = selectedProgram ? schedulePreviewText(selectedProgram) : '';
   const connected = bot.stage !== 'disconnected';
+  const viewMode = programMode === 'view';
 
   return (
     <div className="app-shell">
@@ -1148,20 +1180,26 @@ function App() {
                   ← Programs
                 </button>
               </div>
+            </div>
+            <div className="program-name-row">
+              <input
+                className="program-name-input"
+                value={selectedProgram.name}
+                onChange={(event) => updateProgramName(event.target.value)}
+                placeholder="Program name"
+              />
               <div className="summary-chip">{selectedProgram.steps.length} balls</div>
             </div>
-            <input
-              className="program-name-input"
-              value={selectedProgram.name}
-              onChange={(event) => updateProgramName(event.target.value)}
-              placeholder="Program name"
-            />
+            <p className="muted">{programSummary(selectedProgram)}</p>
             <div className="stacked-actions top-actions">
+              <button type="button" className={`pill-button ${viewMode ? 'is-active' : ''}`} onClick={() => setProgramMode('view')}>
+                View
+              </button>
+              <button type="button" className={`pill-button ${!viewMode ? 'is-active' : ''}`} onClick={() => setProgramMode('edit')}>
+                Edit
+              </button>
               <button type="button" className="secondary-button" onClick={duplicateProgram}>
                 Duplicate
-              </button>
-              <button type="button" className="primary-button" onClick={addBall}>
-                Add Ball
               </button>
             </div>
             <div className="step-list compact-step-list">
@@ -1170,8 +1208,10 @@ function App() {
                   key={step.id}
                   step={step}
                   index={stepIndex}
+                  viewMode={viewMode}
                   onChangeStep={(patch) => updateStep(stepIndex, patch)}
                   onEdit={() => openStepEditor(stepIndex)}
+                  onDelete={() => deleteStep(stepIndex)}
                   onDragStart={(dragIndex) => {
                     dragStepIndexRef.current = dragIndex;
                   }}
@@ -1185,10 +1225,11 @@ function App() {
                 />
               ))}
             </div>
-            <details className="preview-card preview-card--compact">
-              <summary>Legacy Preview</summary>
-              <pre>{legacyPreview}</pre>
-            </details>
+            <div className="composer-actions composer-actions--bottom">
+              <button type="button" className="primary-button" onClick={addBall}>
+                Add Ball
+              </button>
+            </div>
           </main>
 
           <section className="controller-dock panel">
@@ -1205,25 +1246,27 @@ function App() {
                 </button>
               )}
             </div>
-            <div className="control-grid control-grid--dock">
-              <button type="button" className="primary-button" onClick={() => bot.runProgram(selectedProgram)} disabled={!connected || bot.stage !== 'standby'}>
-                Start
-              </button>
-              <button type="button" className="secondary-button" onClick={bot.pauseProgram} disabled={!connected || bot.stage !== 'shooting'}>
-                Pause
-              </button>
-              <button type="button" className="secondary-button" onClick={bot.resumeProgram} disabled={!connected || bot.stage !== 'pause'}>
-                Resume
-              </button>
-              <button
-                type="button"
-                className="danger-button"
-                onClick={bot.stopProgram}
-                disabled={!connected || !['shooting', 'pause', 'shooting-restart'].includes(bot.stage)}
-              >
-                Stop
-              </button>
-            </div>
+            {connected ? (
+              <div className="control-grid control-grid--dock">
+                <button type="button" className="primary-button" onClick={() => bot.runProgram(selectedProgram)} disabled={!connected || bot.stage !== 'standby'}>
+                  Start
+                </button>
+                <button type="button" className="secondary-button" onClick={bot.pauseProgram} disabled={!connected || bot.stage !== 'shooting'}>
+                  Pause
+                </button>
+                <button type="button" className="secondary-button" onClick={bot.resumeProgram} disabled={!connected || bot.stage !== 'pause'}>
+                  Resume
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={bot.stopProgram}
+                  disabled={!connected || !['shooting', 'pause', 'shooting-restart'].includes(bot.stage)}
+                >
+                  Stop
+                </button>
+              </div>
+            ) : null}
             {bot.lastError ? <div className="error-banner">{bot.lastError}</div> : null}
           </section>
         </>
