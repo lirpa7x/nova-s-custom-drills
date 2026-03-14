@@ -347,6 +347,50 @@ function buildSchedule(program) {
   return program.steps.map((step) => buildScheduledStep(step));
 }
 
+function canPackProgram(program) {
+  return program.steps.length > 1 && program.steps.length <= 9 && program.steps.every((step) => step.type === 'ball' && step.options.length === 1);
+}
+
+function buildPackedProgramRun(program) {
+  if (!canPackProgram(program)) {
+    return null;
+  }
+  const stepRepetitions = program.steps.map((step) => step.repetitions);
+  const totalShotsPerCycle = stepRepetitions.reduce((sum, repetitions) => sum + repetitions, 0);
+  return {
+    drill: {
+      id: `packed-${program.id}`,
+      random: false,
+      repetitions: totalShotsPerCycle,
+      ballPayloads: program.steps.map((step) => createBallPayload(optionToRobotBall(step.options[0], step.repetitions))),
+      optionCount: program.steps.length,
+    },
+    stepRepetitions,
+  };
+}
+
+function derivePackedStepState(stepRepetitions, ballCount) {
+  const totalShotsPerCycle = stepRepetitions.reduce((sum, repetitions) => sum + repetitions, 0);
+  if (totalShotsPerCycle <= 0 || ballCount <= 0) {
+    return { stepIndex: 0, stepBallCount: 0 };
+  }
+  let remaining = (ballCount - 1) % totalShotsPerCycle;
+  for (let stepIndex = 0; stepIndex < stepRepetitions.length; stepIndex += 1) {
+    const repetitions = stepRepetitions[stepIndex];
+    if (remaining < repetitions) {
+      return {
+        stepIndex,
+        stepBallCount: remaining + 1,
+      };
+    }
+    remaining -= repetitions;
+  }
+  return {
+    stepIndex: stepRepetitions.length - 1,
+    stepBallCount: stepRepetitions[stepRepetitions.length - 1],
+  };
+}
+
 function schedulePreviewText(program) {
   return program.steps
     .map((step) =>
@@ -978,7 +1022,8 @@ function useNovaBotController() {
   const scheduleRef = useRef([]);
   const currentStepIndexRef = useRef(0);
   const currentStepBallsRef = useRef(0);
-  const lastBallIdxRef = useRef(null);
+  const lastBallCountRef = useRef(null);
+  const packedRunRef = useRef(null);
   const restartPendingRef = useRef(false);
   const singleShotTestRef = useRef(false);
 
@@ -992,7 +1037,8 @@ function useNovaBotController() {
     scheduleRef.current = [];
     currentStepIndexRef.current = 0;
     currentStepBallsRef.current = 0;
-    lastBallIdxRef.current = null;
+    lastBallCountRef.current = null;
+    packedRunRef.current = null;
     restartPendingRef.current = false;
     singleShotTestRef.current = false;
     setCounters({ stepBalls: 0, overallBalls: 0 });
@@ -1056,17 +1102,27 @@ function useNovaBotController() {
   }
 
   function handleDrillStatus(packet) {
-    if (packet.ballIdx === lastBallIdxRef.current) {
+    if (packet.ballCount === lastBallCountRef.current) {
       debugLog('robot.drillStatus.duplicate', {
         packet,
         currentStepIndex: currentStepIndexRef.current,
       });
       return;
     }
-    lastBallIdxRef.current = packet.ballIdx;
+    lastBallCountRef.current = packet.ballCount;
     const schedule = scheduleRef.current;
     if (!schedule.length) {
       debugLog('robot.drillStatus.ignoredNoSchedule', { packet });
+      return;
+    }
+    if (packedRunRef.current) {
+      const packedState = derivePackedStepState(packedRunRef.current.stepRepetitions, packet.ballCount);
+      currentStepIndexRef.current = packedState.stepIndex;
+      currentStepBallsRef.current = packedState.stepBallCount;
+      setCounters({
+        stepBalls: packedState.stepBallCount,
+        overallBalls: packet.ballCount,
+      });
       return;
     }
     const currentStep = schedule[currentStepIndexRef.current];
@@ -1093,9 +1149,9 @@ function useNovaBotController() {
     currentStepIndexRef.current = nextIndex;
     currentStepBallsRef.current = 0;
     if (canChangeDrill(currentStep, nextStep)) {
-      // The device can restart ball indexes when a drill is swapped in place.
+      // The device can restart its shot counter when a drill is swapped in place.
       // Clear the dedupe marker so the next shot from the new step is not ignored.
-      lastBallIdxRef.current = null;
+      lastBallCountRef.current = null;
       debugLog('controller.step.advance', {
         strategy: 'change-drill',
         fromStepIndex: nextIndex === 0 ? schedule.length - 1 : nextIndex - 1,
@@ -1147,7 +1203,7 @@ function useNovaBotController() {
           const schedule = scheduleRef.current;
           if (schedule.length) {
             restartPendingRef.current = false;
-            lastBallIdxRef.current = null;
+            lastBallCountRef.current = null;
             debugLog('controller.restart.ready', {
               stepIndex: currentStepIndexRef.current,
               nextStep: schedule[currentStepIndexRef.current],
@@ -1258,6 +1314,13 @@ function useNovaBotController() {
     setLastError('');
     clearRunTracking();
     singleShotTestRef.current = false;
+    const packedRun = buildPackedProgramRun(program);
+    if (packedRun) {
+      packedRunRef.current = packedRun;
+      scheduleRef.current = [packedRun.drill];
+      queueWrite(createDrillPayload(packedRun.drill), 'shooting').catch(() => null);
+      return;
+    }
     scheduleRef.current = schedule;
     debugLog('controller.runProgram', {
       programId: program.id,
