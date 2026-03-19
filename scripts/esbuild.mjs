@@ -14,7 +14,8 @@ const outFile = path.join(distDir, 'js', 'main.js');
 const styleSourcePath = path.join(rootDir, 'src', 'style.css');
 const styleOutputPath = path.join(distDir, 'src', 'style.css');
 const indexTemplatePath = path.join(rootDir, 'index.template.html');
-const indexOutputPath = path.join(distDir, 'index.html');
+const distIndexOutputPath = path.join(distDir, 'index.html');
+const rootIndexOutputPath = path.join(rootDir, 'index.html');
 const watchMode = process.argv.includes('--watch');
 
 async function collectFiles(relativeDir) {
@@ -87,6 +88,7 @@ async function computeBuildMeta() {
     '--porcelain',
     '--',
     '.',
+    ':(exclude)index.html',
     ':(exclude)dist',
     ':(exclude)dist/**',
   ])
@@ -107,10 +109,17 @@ async function computeBuildMeta() {
   };
 }
 
+function renderIndexHtml(template, assetPrefix = '') {
+  return template
+    .replace('href="src/style.css"', `href="${assetPrefix}src/style.css"`)
+    .replace('src="js/main.js"', `src="${assetPrefix}js/main.js"`);
+}
+
 async function writeIndexHtml(meta) {
   const template = await readFile(indexTemplatePath, 'utf8');
-  const rendered = template.replaceAll('__BUILD_ID__', meta.buildId);
-  await writeFileIfChanged(indexOutputPath, rendered);
+  const renderedTemplate = template.replaceAll('__BUILD_ID__', meta.buildId);
+  await writeFileIfChanged(distIndexOutputPath, renderIndexHtml(renderedTemplate));
+  await writeFileIfChanged(rootIndexOutputPath, renderIndexHtml(renderedTemplate, 'dist/'));
 }
 
 async function syncStaticAssets() {

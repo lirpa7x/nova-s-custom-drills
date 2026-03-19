@@ -9,12 +9,13 @@ npm install
 npm run build
 ```
 
-This bundles a publishable site into `dist/`, including:
+This build writes:
 
+- `index.html` in the repo root, which loads built assets from `dist/`
 - `dist/index.html`
 - `dist/js/main.js`
 - `dist/src/style.css`
 
-If you're deploying with GitHub Pages, point the publish directory at `dist/`.
+For a root-based GitHub Pages deploy, commit both the root `index.html` and the `dist/` folder.
 
 Programs are stored in `localStorage` as JSON under `nova-programs-json-v1`.
