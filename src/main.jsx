@@ -80,6 +80,15 @@ const REPETITION_OPTIONS = [
 const WHEEL_MIN = 400;
 const WHEEL_MAX = 7500;
 const WHEEL_STEP = 50;
+const HEIGHT_MIN = -50;
+const HEIGHT_MAX = 100;
+const HEIGHT_STEP = 1;
+const PLACEMENT_MIN = -10;
+const PLACEMENT_MAX = 10;
+const PLACEMENT_STEP = 0.5;
+const CADENCE_MIN = 0;
+const CADENCE_MAX = 100;
+const CADENCE_STEP = 1;
 
 const DEFAULT_OPTION_STATE = {
   speedId: 'assertive',
@@ -98,6 +107,15 @@ function uid(prefix) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function roundToStep(value, step) {
+  const precision = String(step).includes('.') ? String(step).split('.')[1].length : 0;
+  return Number((Math.round(value / step) * step).toFixed(precision));
+}
+
+function snapToRange(value, min, max, step) {
+  return clamp(roundToStep(value, step), min, max);
 }
 
 function snapWheelSpeed(value) {
@@ -133,29 +151,59 @@ function deriveOptionWheelProfile(option) {
   return { upperWheel, lowerWheel, speed, spin };
 }
 
-function syncOptionWheelState(option) {
+function deriveInterpretedOptionValue(option, key, fallbackId, options, min, max, step) {
+  const rawValue = Number(option[key]);
+  if (Number.isFinite(rawValue)) {
+    return snapToRange(rawValue, min, max, step);
+  }
+  return pickById(options, option[fallbackId], pickById(options, DEFAULT_OPTION_STATE[fallbackId])).value;
+}
+
+function syncOptionState(option) {
   const { upperWheel, lowerWheel, speed, spin } = deriveOptionWheelProfile(option);
+  const height = deriveInterpretedOptionValue(option, 'height', 'heightId', HEIGHT_OPTIONS, HEIGHT_MIN, HEIGHT_MAX, HEIGHT_STEP);
+  const placement = deriveInterpretedOptionValue(option, 'placement', 'placementId', PLACEMENT_OPTIONS, PLACEMENT_MIN, PLACEMENT_MAX, PLACEMENT_STEP);
+  const cadence = deriveInterpretedOptionValue(option, 'cadence', 'cadenceId', CADENCE_OPTIONS, CADENCE_MIN, CADENCE_MAX, CADENCE_STEP);
+  const heightPreset = pickClosestOption(HEIGHT_OPTIONS, height, 'value');
+  const placementPreset = pickClosestOption(PLACEMENT_OPTIONS, placement, 'value');
+  const cadencePreset = pickClosestOption(CADENCE_OPTIONS, cadence, 'value');
   return {
     ...option,
     upperWheel,
     lowerWheel,
     speedId: speed.id,
     spinId: spin.id,
+    height,
+    placement,
+    cadence,
+    heightId: heightPreset.id,
+    placementId: placementPreset.id,
+    cadenceId: cadencePreset.id,
   };
 }
 
-function buildWheelPatch(option, patch) {
-  const next = syncOptionWheelState({ ...option, ...patch });
+function buildOptionPatch(option, patch) {
+  const next = syncOptionState({ ...option, ...patch });
   return {
     upperWheel: next.upperWheel,
     lowerWheel: next.lowerWheel,
     speedId: next.speedId,
     spinId: next.spinId,
+    height: next.height,
+    placement: next.placement,
+    cadence: next.cadence,
+    heightId: next.heightId,
+    placementId: next.placementId,
+    cadenceId: next.cadenceId,
   };
 }
 
+function buildWheelPatch(option, patch) {
+  return buildOptionPatch(option, patch);
+}
+
 function createOption(overrides = {}) {
-  return syncOptionWheelState({
+  return syncOptionState({
     id: uid('option'),
     ...DEFAULT_OPTION_STATE,
     ...overrides,
@@ -212,7 +260,7 @@ function createDemoStore() {
 }
 
 function normalizeStoredOption(option) {
-  return syncOptionWheelState({
+  return syncOptionState({
     id: option?.id || uid('option'),
     ...DEFAULT_OPTION_STATE,
     ...option,
@@ -299,10 +347,29 @@ function deriveWheelSpeeds(option) {
   return { upperWheel, lowerWheel };
 }
 
+function getOptionValue(option, key, fallbackId, options, min, max, step) {
+  return deriveInterpretedOptionValue(option, key, fallbackId, options, min, max, step);
+}
+
+function formatNumericValue(value, step, suffix = '') {
+  const precision = String(step).includes('.') ? String(step).split('.')[1].length : 0;
+  return `${Number(value).toFixed(precision)}${suffix}`;
+}
+
+function formatInterpretedOptionLabel(options, value, step, suffix = '') {
+  const preset = pickClosestOption(options, value, 'value');
+  const formattedValue = formatNumericValue(value, step, suffix);
+  return Math.abs(preset.value - value) < 0.001 ? `${preset.label} (${formattedValue})` : `${preset.label} · ${formattedValue}`;
+}
+
+function formatInterpretedOptionSummary(options, value) {
+  return pickClosestOption(options, value, 'value').label;
+}
+
 function optionToRobotBall(option, repetitions) {
-  const height = pickById(HEIGHT_OPTIONS, option.heightId).value;
-  const placement = pickById(PLACEMENT_OPTIONS, option.placementId).value;
-  const cadence = pickById(CADENCE_OPTIONS, option.cadenceId).value;
+  const height = getOptionValue(option, 'height', 'heightId', HEIGHT_OPTIONS, HEIGHT_MIN, HEIGHT_MAX, HEIGHT_STEP);
+  const placement = getOptionValue(option, 'placement', 'placementId', PLACEMENT_OPTIONS, PLACEMENT_MIN, PLACEMENT_MAX, PLACEMENT_STEP);
+  const cadence = getOptionValue(option, 'cadence', 'cadenceId', CADENCE_OPTIONS, CADENCE_MIN, CADENCE_MAX, CADENCE_STEP);
   const { upperWheel, lowerWheel } = deriveWheelSpeeds(option);
   return {
     upperWheel,
@@ -664,11 +731,14 @@ function buildChallengeResponse(serial, code) {
 
 function optionSummary(option) {
   const { speed, spin } = deriveOptionWheelProfile(option);
+  const height = getOptionValue(option, 'height', 'heightId', HEIGHT_OPTIONS, HEIGHT_MIN, HEIGHT_MAX, HEIGHT_STEP);
+  const placement = getOptionValue(option, 'placement', 'placementId', PLACEMENT_OPTIONS, PLACEMENT_MIN, PLACEMENT_MAX, PLACEMENT_STEP);
+  const cadence = getOptionValue(option, 'cadence', 'cadenceId', CADENCE_OPTIONS, CADENCE_MIN, CADENCE_MAX, CADENCE_STEP);
   return [
     spin.label,
-    pickById(PLACEMENT_OPTIONS, option.placementId).label,
-    pickById(HEIGHT_OPTIONS, option.heightId).label,
-    pickById(CADENCE_OPTIONS, option.cadenceId).label,
+    formatInterpretedOptionSummary(PLACEMENT_OPTIONS, placement),
+    formatInterpretedOptionSummary(HEIGHT_OPTIONS, height),
+    formatInterpretedOptionSummary(CADENCE_OPTIONS, cadence),
     speed.label,
   ].join(' · ');
 }
@@ -696,19 +766,76 @@ function FieldSelect({ label, value, options, onChange }) {
   );
 }
 
-function FieldRange({ label, value, min, max, step, onChange }) {
+function FieldRange({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  valueLabel = value,
+  minLabel = min,
+  maxLabel = max,
+  midLabel = null,
+  className = '',
+  inputClassName = '',
+}) {
   return (
-    <label className="field-range">
+    <label className={`field-range ${className}`.trim()}>
       <div className="field-range__row">
         <span>{label}</span>
-        <strong>{value} rpm</strong>
+        <strong>{valueLabel}</strong>
       </div>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
-      <div className="field-range__limits">
-        <small>{min}</small>
-        <small>{max}</small>
+      <div className="field-range__track">
+        <input
+          type="range"
+          className={`field-range__input ${inputClassName}`.trim()}
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(event) => onChange(Number(event.target.value))}
+        />
+      </div>
+      <div className={`field-range__limits ${midLabel ? 'field-range__limits--three-up' : ''}`.trim()}>
+        <small>{minLabel}</small>
+        {midLabel ? <small>{midLabel}</small> : null}
+        <small>{maxLabel}</small>
       </div>
     </label>
+  );
+}
+
+function FieldOptionRange({
+  label,
+  value,
+  min,
+  max,
+  step,
+  options,
+  onChange,
+  placement = false,
+  suffix = '',
+  minLabel = formatNumericValue(min, step, suffix),
+  maxLabel = formatNumericValue(max, step, suffix),
+}) {
+  const middleOption = options.find((option) => option.value === 0) || options[Math.floor(options.length / 2)];
+
+  return (
+    <FieldRange
+      label={label}
+      value={value}
+      min={min}
+      max={max}
+      step={step}
+      onChange={onChange}
+      valueLabel={formatInterpretedOptionLabel(options, value, step, suffix)}
+      minLabel={minLabel}
+      maxLabel={maxLabel}
+      midLabel={placement ? middleOption?.label || null : null}
+      className={placement ? 'field-range--placement' : ''}
+      inputClassName={placement ? 'field-range__input--placement' : ''}
+    />
   );
 }
 
@@ -750,6 +877,7 @@ function OptionCard({
           min={WHEEL_MIN}
           max={WHEEL_MAX}
           step={WHEEL_STEP}
+          valueLabel={`${wheels.upperWheel} rpm`}
           onChange={(value) => onChange(buildWheelPatch(option, { upperWheel: value }))}
         />
         <FieldRange
@@ -758,11 +886,40 @@ function OptionCard({
           min={WHEEL_MIN}
           max={WHEEL_MAX}
           step={WHEEL_STEP}
+          valueLabel={`${wheels.lowerWheel} rpm`}
           onChange={(value) => onChange(buildWheelPatch(option, { lowerWheel: value }))}
         />
-        <FieldSelect label="Height" value={option.heightId} options={HEIGHT_OPTIONS} onChange={(value) => onChange({ heightId: value })} />
-        <FieldSelect label="Placement" value={option.placementId} options={PLACEMENT_OPTIONS} onChange={(value) => onChange({ placementId: value })} />
-        <FieldSelect label="Cadence" value={option.cadenceId} options={CADENCE_OPTIONS} onChange={(value) => onChange({ cadenceId: value })} />
+        <FieldOptionRange
+          label="Height"
+          value={getOptionValue(option, 'height', 'heightId', HEIGHT_OPTIONS, HEIGHT_MIN, HEIGHT_MAX, HEIGHT_STEP)}
+          min={HEIGHT_MIN}
+          max={HEIGHT_MAX}
+          step={HEIGHT_STEP}
+          options={HEIGHT_OPTIONS}
+          onChange={(value) => onChange(buildOptionPatch(option, { height: value }))}
+        />
+        <FieldOptionRange
+          label="Placement"
+          value={getOptionValue(option, 'placement', 'placementId', PLACEMENT_OPTIONS, PLACEMENT_MIN, PLACEMENT_MAX, PLACEMENT_STEP)}
+          min={PLACEMENT_MIN}
+          max={PLACEMENT_MAX}
+          step={PLACEMENT_STEP}
+          options={PLACEMENT_OPTIONS}
+          placement
+          minLabel="BH"
+          maxLabel="FH"
+          onChange={(value) => onChange(buildOptionPatch(option, { placement: value }))}
+        />
+        <FieldOptionRange
+          label="Cadence"
+          value={getOptionValue(option, 'cadence', 'cadenceId', CADENCE_OPTIONS, CADENCE_MIN, CADENCE_MAX, CADENCE_STEP)}
+          min={CADENCE_MIN}
+          max={CADENCE_MAX}
+          step={CADENCE_STEP}
+          options={CADENCE_OPTIONS}
+          suffix="%"
+          onChange={(value) => onChange(buildOptionPatch(option, { cadence: value }))}
+        />
       </div>
       {showTestButton ? (
         <div className="option-card__footer">
@@ -1626,15 +1783,15 @@ function App() {
                 <div className="summary-chip">{selectedProgram.randomized ? 'Randomized' : 'In Order'}</div>
               </div>
             </div>
-            <section className="program-settings-card">
-              <div>
-                <p className="eyebrow">Program Order</p>
-                <h3>{selectedProgram.randomized ? 'Randomized run' : 'Run in order'}</h3>
-                <p className="muted">
-                  Randomized mode sends the program as one packed drill. Programs with more than 9 balls must run in order.
-                </p>
-              </div>
-              {!viewMode ? (
+            {!viewMode ? (
+              <section className="program-settings-card">
+                <div>
+                  <p className="eyebrow">Program Order</p>
+                  <h3>{selectedProgram.randomized ? 'Randomized run' : 'Run in order'}</h3>
+                  <p className="muted">
+                    Randomized mode sends the program as one packed drill. Programs with more than 9 balls must run in order.
+                  </p>
+                </div>
                 <div className="pill-group">
                   <button
                     type="button"
@@ -1651,8 +1808,8 @@ function App() {
                     Randomized
                   </button>
                 </div>
-              ) : null}
-            </section>
+              </section>
+            ) : null}
             {!viewMode ? (
               <div className="stacked-actions top-actions">
                 <button type="button" className="secondary-button" onClick={duplicateProgram}>
@@ -1674,7 +1831,7 @@ function App() {
                   key={step.id}
                   step={step}
                   index={stepIndex}
-                  showTestButton={connected}
+                  showTestButton={!viewMode}
                   canTestButton={canTestStep}
                   onTest={() => bot.testStep(step)}
                   viewMode={viewMode}
@@ -1754,7 +1911,7 @@ function App() {
           onChangeDraft={applyDraftStep}
           onCancel={cancelEditingStep}
           onSave={saveEditingStep}
-          showTestButton={connected}
+          showTestButton
           canTestButton={canTestStep}
           onTestStep={bot.testStep}
         />

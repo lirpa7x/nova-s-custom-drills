@@ -9,9 +9,12 @@ import * as esbuild from 'esbuild';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
-const outFile = path.join(rootDir, 'js', 'main.js');
+const distDir = path.join(rootDir, 'dist');
+const outFile = path.join(distDir, 'js', 'main.js');
+const styleSourcePath = path.join(rootDir, 'src', 'style.css');
+const styleOutputPath = path.join(distDir, 'src', 'style.css');
 const indexTemplatePath = path.join(rootDir, 'index.template.html');
-const indexOutputPath = path.join(rootDir, 'index.html');
+const indexOutputPath = path.join(distDir, 'index.html');
 const watchMode = process.argv.includes('--watch');
 
 async function collectFiles(relativeDir) {
@@ -27,6 +30,25 @@ async function collectFiles(relativeDir) {
     })
   );
   return files.flat().sort();
+}
+
+async function writeFileIfChanged(filePath, contents) {
+  const previous = await readFile(filePath, 'utf8').catch(() => null);
+  if (previous === contents) {
+    return false;
+  }
+  await writeFile(filePath, contents);
+  return true;
+}
+
+async function copyFileIfChanged(sourcePath, targetPath) {
+  const source = await readFile(sourcePath);
+  const previous = await readFile(targetPath).catch(() => null);
+  if (previous && Buffer.compare(previous, source) === 0) {
+    return false;
+  }
+  await writeFile(targetPath, source);
+  return true;
 }
 
 function readGitValue(args) {
@@ -60,8 +82,17 @@ async function computeBuildMeta() {
   const packageJson = JSON.parse(await readFile(path.join(rootDir, 'package.json'), 'utf8'));
   const sourceHash = hash.digest('hex').slice(0, 12);
   const gitShortHash = readGitValue(['rev-parse', '--short', 'HEAD']) || 'nogit';
-  const dirty = readGitValue(['status', '--porcelain']) ? 'dirty' : 'clean';
-  const builtAt = new Date().toISOString();
+  const dirty = readGitValue([
+    'status',
+    '--porcelain',
+    '--',
+    '.',
+    ':(exclude)dist',
+    ':(exclude)dist/**',
+  ])
+    ? 'dirty'
+    : 'clean';
+  const builtAt = readGitValue(['show', '-s', '--format=%cI', 'HEAD']) || 'unknown';
   const buildId = `${gitShortHash}-${sourceHash}${dirty === 'dirty' ? '-dirty' : ''}`;
   const buildLabel = `v${packageJson.version} ${buildId}`;
 
@@ -79,7 +110,11 @@ async function computeBuildMeta() {
 async function writeIndexHtml(meta) {
   const template = await readFile(indexTemplatePath, 'utf8');
   const rendered = template.replaceAll('__BUILD_ID__', meta.buildId);
-  await writeFile(indexOutputPath, rendered);
+  await writeFileIfChanged(indexOutputPath, rendered);
+}
+
+async function syncStaticAssets() {
+  await copyFileIfChanged(styleSourcePath, styleOutputPath);
 }
 
 function buildMetaModule(meta) {
@@ -127,6 +162,7 @@ function buildMetaPlugin() {
           return;
         }
         const meta = currentMeta || (await ensureMeta());
+        await syncStaticAssets();
         await writeIndexHtml(meta);
         console.log(`[build] ${meta.buildLabel} (${meta.builtAt})`);
       });
@@ -146,7 +182,8 @@ const buildOptions = {
   minify: !watchMode,
 };
 
-await mkdir(path.join(rootDir, 'js'), { recursive: true });
+await mkdir(path.join(distDir, 'js'), { recursive: true });
+await mkdir(path.join(distDir, 'src'), { recursive: true });
 
 if (watchMode) {
   const ctx = await esbuild.context(buildOptions);
