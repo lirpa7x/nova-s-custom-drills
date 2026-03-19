@@ -379,10 +379,6 @@ button:disabled {
   margin: 18px 0;
 }
 
-.step-card__options--group {
-  gap: 16px;
-}
-
 .option-card {
   padding: 16px;
 }
@@ -393,21 +389,6 @@ button:disabled {
 
 .option-card__heading h4 {
   line-height: 1.35;
-}
-
-.option-card--group {
-  background: linear-gradient(180deg, rgba(255, 254, 249, 0.98) 0%, rgba(248, 241, 230, 0.92) 100%);
-}
-
-.option-card--group.is-expanded {
-  border-color: rgba(217, 95, 67, 0.45);
-  box-shadow: 0 0 0 3px rgba(217, 95, 67, 0.1);
-}
-
-.option-card--group.is-collapsed {
-  background: rgba(255, 252, 246, 0.94);
-  padding-top: 14px;
-  padding-bottom: 14px;
 }
 
 .field-grid {
@@ -660,9 +641,33 @@ button:disabled {
   gap: 10px;
 }
 
+.summary-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .program-name-row .program-name-input {
   flex: 1;
   min-width: 0;
+}
+
+.program-settings-card {
+  margin: 14px 0;
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel-strong);
+}
+
+.program-settings-card h3 {
+  margin: 4px 0 6px;
+  font-family: 'Palatino Linotype', 'Book Antiqua', serif;
 }
 
 .composer-actions--bottom {
@@ -748,10 +753,6 @@ button:disabled {
   font-size: 0.78rem;
   color: var(--muted);
   white-space: normal;
-}
-
-.compact-step-row__group-line {
-  display: block;
 }
 
 .touch-drag-ghost {
@@ -848,13 +849,6 @@ button:disabled {
   flex-wrap: wrap;
 }
 
-.option-card--compact {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 8px 0;
-}
-
 .option-card__footer {
   margin-top: 12px;
   display: flex;
@@ -888,8 +882,13 @@ button:disabled {
     align-items: stretch;
   }
 
+  .program-settings-card,
   .program-name-row {
-    flex-direction: row;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .summary-chip-group {
+    justify-content: flex-start;
   }
 }

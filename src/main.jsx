@@ -172,24 +172,13 @@ function createBallStep(overrides = {}) {
   };
 }
 
-function createGroupStep(overrides = {}) {
-  return {
-    id: uid('step'),
-    type: 'group',
-    repetitions: 1,
-    options: [
-      createOption({ spinId: 'top', placementId: 'bh' }),
-      createOption({ spinId: 'flat', placementId: 'middle' }),
-    ],
-    ...overrides,
-  };
-}
-
-function createProgram(name, steps) {
+function createProgram(name, steps, overrides = {}) {
   return {
     id: uid('program'),
     name,
+    randomized: false,
     steps,
+    ...overrides,
   };
 }
 
@@ -198,24 +187,73 @@ function createDemoStore() {
     repetitions: 1,
     options: [createOption({ speedId: 'steady', spinId: 'heavy-back', heightId: 'low', placementId: 'middle', cadenceId: 'measured' })],
   });
-  const rally = createGroupStep({
+  const rallyBackhand = createBallStep({
     repetitions: 1,
-    options: [
-      createOption({ speedId: 'fast', spinId: 'top', heightId: 'medium', placementId: 'wide-bh', cadenceId: 'quick' }),
-      createOption({ speedId: 'fast', spinId: 'top', heightId: 'medium-high', placementId: 'wide-fh', cadenceId: 'quick' }),
-      createOption({ speedId: 'assertive', spinId: 'flat', heightId: 'medium', placementId: 'middle', cadenceId: 'rapid' }),
-    ],
+    options: [createOption({ speedId: 'fast', spinId: 'top', heightId: 'medium', placementId: 'wide-bh', cadenceId: 'quick' })],
+  });
+  const rallyForehand = createBallStep({
+    repetitions: 1,
+    options: [createOption({ speedId: 'fast', spinId: 'top', heightId: 'medium-high', placementId: 'wide-fh', cadenceId: 'quick' })],
+  });
+  const rallyMiddle = createBallStep({
+    repetitions: 1,
+    options: [createOption({ speedId: 'assertive', spinId: 'flat', heightId: 'medium', placementId: 'middle', cadenceId: 'rapid' })],
   });
   const finisher = createBallStep({
     repetitions: 2,
     options: [createOption({ speedId: 'blistering', spinId: 'heavy-top', heightId: 'medium-high', placementId: 'fh', cadenceId: 'frenzy' })],
   });
-  const program = createProgram('Nova Rally Builder', [opener, rally, finisher]);
+  const program = createProgram('Nova Rally Builder', [opener, rallyBackhand, rallyForehand, rallyMiddle, finisher]);
   return {
     version: 1,
     selectedProgramId: program.id,
     programs: [program],
   };
+}
+
+function normalizeStoredOption(option) {
+  return syncOptionWheelState({
+    id: option?.id || uid('option'),
+    ...DEFAULT_OPTION_STATE,
+    ...option,
+  });
+}
+
+function normalizeStepRepetitions(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 1;
+}
+
+function normalizeStoredStep(step) {
+  const repetitions = normalizeStepRepetitions(step?.repetitions);
+  const rawOptions = Array.isArray(step?.options) && step.options.length ? step.options : [createOption()];
+  const options = rawOptions.map((option) => normalizeStoredOption(option));
+  if (step?.type === 'group' || options.length > 1) {
+    return options.map((option, index) =>
+      createBallStep({
+        id: index === 0 && step?.id ? step.id : uid('step'),
+        repetitions,
+        options: [option],
+      })
+    );
+  }
+  return [
+    createBallStep({
+      id: step?.id || uid('step'),
+      repetitions,
+      options: [options[0]],
+    }),
+  ];
+}
+
+function normalizeStoredProgram(program) {
+  const rawSteps = Array.isArray(program?.steps) ? program.steps : [];
+  const migratedFromGroups = rawSteps.some((step) => step?.type === 'group' || (Array.isArray(step?.options) && step.options.length > 1));
+  const steps = rawSteps.flatMap((step) => normalizeStoredStep(step));
+  return createProgram(program?.name || 'Program', steps.length ? steps : [createBallStep()], {
+    id: program?.id || uid('program'),
+    randomized: typeof program?.randomized === 'boolean' ? program.randomized : migratedFromGroups,
+  });
 }
 
 function loadStore() {
@@ -230,13 +268,7 @@ function loadStore() {
     }
     return {
       ...parsed,
-      programs: parsed.programs.map((program) => ({
-        ...program,
-        steps: program.steps.map((step) => ({
-          ...step,
-          options: step.options.map((option) => syncOptionWheelState(option)),
-        })),
-      })),
+      programs: parsed.programs.map((program) => normalizeStoredProgram(program)),
     };
   } catch (error) {
     console.warn('Failed to load program store, falling back to demo state.', error);
@@ -328,9 +360,10 @@ function createChangeDrillPayload(step) {
 function buildScheduledStep(step, overrides = {}) {
   const repetitions = overrides.repetitions ?? step.repetitions;
   const cadence = overrides.cadence;
+  const random = overrides.random ?? false;
   return {
     id: step.id,
-    random: step.type === 'group',
+    random,
     repetitions,
     ballPayloads: step.options.map((option) => {
       const robotBall = optionToRobotBall(option, repetitions);
@@ -344,11 +377,11 @@ function buildScheduledStep(step, overrides = {}) {
 }
 
 function buildSchedule(program) {
-  return program.steps.map((step) => buildScheduledStep(step));
+  return program.steps.map((step) => buildScheduledStep(step, { random: false }));
 }
 
 function canPackProgram(program) {
-  return program.steps.length > 1 && program.steps.length <= 9 && program.steps.every((step) => step.type === 'ball' && step.options.length === 1);
+  return program.steps.length >= 1 && program.steps.length <= 9 && program.steps.every((step) => step.options.length === 1);
 }
 
 function buildPackedProgramRun(program) {
@@ -360,12 +393,13 @@ function buildPackedProgramRun(program) {
   return {
     drill: {
       id: `packed-${program.id}`,
-      random: false,
+      random: Boolean(program.randomized),
       repetitions: totalShotsPerCycle,
       ballPayloads: program.steps.map((step) => createBallPayload(optionToRobotBall(step.options[0], step.repetitions))),
       optionCount: program.steps.length,
     },
-    stepRepetitions,
+    randomized: Boolean(program.randomized),
+    stepRepetitions: program.randomized ? [] : stepRepetitions,
   };
 }
 
@@ -643,10 +677,8 @@ function programSummary(program) {
   if (!program?.steps?.length) {
     return 'No balls configured yet.';
   }
-  const groups = program.steps.filter((step) => step.type === 'group').length;
-  const singles = program.steps.length - groups;
   const totalReps = program.steps.reduce((sum, step) => sum + step.repetitions, 0);
-  return `${program.steps.length} balls · ${singles} single · ${groups} random groups · ${totalReps} total reps`;
+  return `${program.steps.length} balls · ${program.randomized ? 'randomized' : 'in order'} · ${totalReps} total reps`;
 }
 
 function FieldSelect({ label, value, options, onChange }) {
@@ -693,14 +725,7 @@ function ProgramRow({ active, name, summary, onSelect }) {
 
 function OptionCard({
   option,
-  index,
-  group,
   onChange,
-  onDelete,
-  compact = false,
-  expanded = true,
-  onEdit,
-  onDone,
   showTestButton = false,
   canTestButton = false,
   onTest,
@@ -708,57 +733,38 @@ function OptionCard({
   const wheels = deriveOptionWheelProfile(option);
 
   return (
-    <div className={`option-card ${compact ? 'option-card--compact' : ''} ${group ? 'option-card--group' : ''} ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
+    <div className="option-card">
       <div className="option-card__header">
         <div className="option-card__heading">
-          <p className="eyebrow">{group ? `Option ${String.fromCharCode(65 + index)}` : 'Ball Setup'}</p>
+          <p className="eyebrow">Ball Setup</p>
           <h4>{optionSummary(option)}</h4>
         </div>
-        {group ? (
-          <div className="mini-actions">
-            {!expanded && showTestButton ? (
-              <button type="button" className="secondary-button" onClick={onTest} disabled={!canTestButton}>
-                Test
-              </button>
-            ) : null}
-            <button type="button" className="secondary-button" onClick={expanded ? onDone : onEdit}>
-              {expanded ? 'Done' : 'Edit'}
-            </button>
-            <button type="button" className="ghost-button danger-text" onClick={onDelete}>
-              Remove
-            </button>
-          </div>
-        ) : null}
       </div>
-      {group && !expanded ? null : (
-        <div className="option-card__meta">
-          Upper {wheels.upperWheel} rpm · Lower {wheels.lowerWheel} rpm · {wheels.spin.label} · {wheels.speed.label}
-        </div>
-      )}
-      {group && !expanded ? null : (
-        <div className="field-grid">
-          <FieldRange
-            label="Upper RPM"
-            value={wheels.upperWheel}
-            min={WHEEL_MIN}
-            max={WHEEL_MAX}
-            step={WHEEL_STEP}
-            onChange={(value) => onChange(buildWheelPatch(option, { upperWheel: value }))}
-          />
-          <FieldRange
-            label="Lower RPM"
-            value={wheels.lowerWheel}
-            min={WHEEL_MIN}
-            max={WHEEL_MAX}
-            step={WHEEL_STEP}
-            onChange={(value) => onChange(buildWheelPatch(option, { lowerWheel: value }))}
-          />
-          <FieldSelect label="Height" value={option.heightId} options={HEIGHT_OPTIONS} onChange={(value) => onChange({ heightId: value })} />
-          <FieldSelect label="Placement" value={option.placementId} options={PLACEMENT_OPTIONS} onChange={(value) => onChange({ placementId: value })} />
-          <FieldSelect label="Cadence" value={option.cadenceId} options={CADENCE_OPTIONS} onChange={(value) => onChange({ cadenceId: value })} />
-        </div>
-      )}
-      {group && expanded && showTestButton ? (
+      <div className="option-card__meta">
+        Upper {wheels.upperWheel} rpm · Lower {wheels.lowerWheel} rpm · {wheels.spin.label} · {wheels.speed.label}
+      </div>
+      <div className="field-grid">
+        <FieldRange
+          label="Upper RPM"
+          value={wheels.upperWheel}
+          min={WHEEL_MIN}
+          max={WHEEL_MAX}
+          step={WHEEL_STEP}
+          onChange={(value) => onChange(buildWheelPatch(option, { upperWheel: value }))}
+        />
+        <FieldRange
+          label="Lower RPM"
+          value={wheels.lowerWheel}
+          min={WHEEL_MIN}
+          max={WHEEL_MAX}
+          step={WHEEL_STEP}
+          onChange={(value) => onChange(buildWheelPatch(option, { lowerWheel: value }))}
+        />
+        <FieldSelect label="Height" value={option.heightId} options={HEIGHT_OPTIONS} onChange={(value) => onChange({ heightId: value })} />
+        <FieldSelect label="Placement" value={option.placementId} options={PLACEMENT_OPTIONS} onChange={(value) => onChange({ placementId: value })} />
+        <FieldSelect label="Cadence" value={option.cadenceId} options={CADENCE_OPTIONS} onChange={(value) => onChange({ cadenceId: value })} />
+      </div>
+      {showTestButton ? (
         <div className="option-card__footer">
           <button type="button" className="secondary-button" onClick={onTest} disabled={!canTestButton}>
             Test
@@ -815,21 +821,11 @@ function CompactStepRow({
         <span className="compact-step-row__title">
           <span className="compact-step-row__title-text">
             <span className="eyebrow">Ball {index + 1}</span>
-            <strong>{step.type === 'group' ? 'Random Group' : 'Single Ball'}</strong>
+            <strong>Single Ball</strong>
           </span>
           <span className="compact-step-row__meta">{step.repetitions}x</span>
         </span>
-        {step.type === 'group' ? (
-          <span className="compact-step-row__summary">
-            {step.options.map((option, optionIndex) => (
-              <span key={option.id} className="compact-step-row__group-line">
-                Option {String.fromCharCode(65 + optionIndex)}: {optionSummary(option)}
-              </span>
-            ))}
-          </span>
-        ) : (
-          <span className="compact-step-row__summary">{optionSummary(step.options[0])}</span>
-        )}
+        <span className="compact-step-row__summary">{optionSummary(step.options[0])}</span>
       </button>
       <div className="compact-step-row__actions">
         {showTestButton ? (
@@ -859,70 +855,14 @@ function CompactStepRow({
 }
 
 function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave, showTestButton, canTestButton, onTestStep }) {
-  const [editingOptionIndex, setEditingOptionIndex] = useState(null);
-
-  useEffect(() => {
-    setEditingOptionIndex(null);
-  }, [draft?.id]);
-
-  useEffect(() => {
-    if (!draft || draft.type !== 'group') {
-      setEditingOptionIndex(null);
-      return;
-    }
-    if (editingOptionIndex != null && editingOptionIndex >= draft.options.length) {
-      setEditingOptionIndex(null);
-    }
-  }, [draft, draft?.type, draft?.options?.length, editingOptionIndex]);
-
   if (!draft) {
     return null;
   }
 
-  function updateOptionDraft(optionIndex, patch) {
+  function updateOptionDraft(patch) {
     onChangeDraft((previous) => {
-      previous.options[optionIndex] = { ...previous.options[optionIndex], ...patch };
+      previous.options[0] = { ...previous.options[0], ...patch };
       return previous;
-    });
-  }
-
-  function addOptionDraft() {
-    const nextIndex = draft.options.length;
-    onChangeDraft((previous) => {
-      previous.options.push(createOption({ placementId: 'fh', spinId: 'top' }));
-      previous.type = 'group';
-      return previous;
-    });
-    setEditingOptionIndex(nextIndex);
-  }
-
-  function deleteOptionDraft(optionIndex) {
-    setEditingOptionIndex((current) => {
-      if (current == null) {
-        return null;
-      }
-      if (current === optionIndex) {
-        return null;
-      }
-      return current > optionIndex ? current - 1 : current;
-    });
-    onChangeDraft((previous) => {
-      previous.options.splice(optionIndex, 1);
-      if (previous.options.length <= 1) {
-        previous.type = 'ball';
-      }
-      if (!previous.options.length) {
-        previous.options = [createOption()];
-      }
-      return previous;
-    });
-  }
-
-  function testDraftOption(option) {
-    onTestStep({
-      ...draft,
-      type: 'ball',
-      options: [deepClone(option)],
     });
   }
 
@@ -942,54 +882,15 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave, s
           </button>
         </div>
       </div>
-      <div className="step-card__toolbar step-card__toolbar--editor">
-        <div className="pill-group">
-          <button
-            type="button"
-            className={`pill-button ${draft.type === 'ball' ? 'is-active' : ''}`}
-            onClick={() => {
-              setEditingOptionIndex(null);
-              onChangeDraft((previous) => ({ ...previous, type: 'ball', options: [previous.options[0]] }));
-            }}
-          >
-            Single Ball
-          </button>
-          <button
-            type="button"
-            className={`pill-button ${draft.type === 'group' ? 'is-active' : ''}`}
-            onClick={() => {
-              setEditingOptionIndex(null);
-              onChangeDraft((previous) => ({ ...previous, type: 'group' }));
-            }}
-          >
-            Random Group
-          </button>
-        </div>
+      <div className="step-card__options">
+        <OptionCard
+          option={draft.options[0]}
+          onChange={updateOptionDraft}
+          showTestButton={showTestButton}
+          canTestButton={canTestButton}
+          onTest={() => onTestStep(deepClone(draft))}
+        />
       </div>
-      <div className={`step-card__options ${draft.type === 'group' ? 'step-card__options--group' : ''}`}>
-        {draft.options.map((option, optionIndex) => (
-          <OptionCard
-            key={option.id}
-            option={option}
-            index={optionIndex}
-            group={draft.type === 'group'}
-            onChange={(patch) => updateOptionDraft(optionIndex, patch)}
-            onDelete={() => deleteOptionDraft(optionIndex)}
-            compact={draft.type !== 'group'}
-            expanded={draft.type !== 'group' || editingOptionIndex === optionIndex}
-            onEdit={() => setEditingOptionIndex(optionIndex)}
-            onDone={() => setEditingOptionIndex(null)}
-            showTestButton={showTestButton}
-            canTestButton={canTestButton}
-            onTest={() => testDraftOption(option)}
-          />
-        ))}
-      </div>
-      {draft.type === 'group' ? (
-        <button type="button" className="secondary-button" onClick={addOptionDraft}>
-          Add Option
-        </button>
-      ) : null}
       <div className="ball-editor-footer">
         <FieldSelect
           label="Repetitions"
@@ -997,11 +898,6 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave, s
           options={REPETITION_OPTIONS.map((option) => ({ ...option, id: String(option.value) }))}
           onChange={(value) => onChangeDraft((previous) => ({ ...previous, repetitions: Number(value) }))}
         />
-        {draft.type === 'ball' && showTestButton ? (
-          <button type="button" className="secondary-button" onClick={() => onTestStep(deepClone(draft))} disabled={!canTestButton}>
-            Test
-          </button>
-        ) : null}
       </div>
     </main>
   );
@@ -1116,6 +1012,13 @@ function useNovaBotController() {
       return;
     }
     if (packedRunRef.current) {
+      if (packedRunRef.current.randomized) {
+        setCounters({
+          stepBalls: packet.ballCount,
+          overallBalls: packet.ballCount,
+        });
+        return;
+      }
       const packedState = derivePackedStepState(packedRunRef.current.stepRepetitions, packet.ballCount);
       currentStepIndexRef.current = packedState.stepIndex;
       currentStepBallsRef.current = packedState.stepBallCount;
@@ -1306,8 +1209,7 @@ function useNovaBotController() {
     if (protocolStageRef.current !== 'standby') {
       return;
     }
-    const schedule = buildSchedule(program);
-    if (!schedule.length) {
+    if (!program.steps.length) {
       setLastError('Add at least one ball before running the program.');
       return;
     }
@@ -1321,6 +1223,11 @@ function useNovaBotController() {
       queueWrite(createDrillPayload(packedRun.drill), 'shooting').catch(() => null);
       return;
     }
+    if (program.randomized) {
+      setLastError('Randomized programs support up to 9 balls.');
+      return;
+    }
+    const schedule = buildSchedule(program);
     scheduleRef.current = schedule;
     debugLog('controller.runProgram', {
       programId: program.id,
@@ -1520,6 +1427,10 @@ function App() {
     updateSelectedProgram((program) => ({ ...program, name }));
   }
 
+  function updateProgramRandomized(randomized) {
+    updateSelectedProgram((program) => ({ ...program, randomized }));
+  }
+
   function updateStep(stepIndex, patch) {
     updateSelectedProgram((program) => {
       program.steps[stepIndex] = { ...program.steps[stepIndex], ...patch };
@@ -1710,8 +1621,38 @@ function App() {
                 onChange={(event) => updateProgramName(event.target.value)}
                 placeholder="Program name"
               />
-              <div className="summary-chip">{selectedProgram.steps.length} balls</div>
+              <div className="summary-chip-group">
+                <div className="summary-chip">{selectedProgram.steps.length} balls</div>
+                <div className="summary-chip">{selectedProgram.randomized ? 'Randomized' : 'In Order'}</div>
+              </div>
             </div>
+            <section className="program-settings-card">
+              <div>
+                <p className="eyebrow">Program Order</p>
+                <h3>{selectedProgram.randomized ? 'Randomized run' : 'Run in order'}</h3>
+                <p className="muted">
+                  Randomized mode sends the program as one packed drill. Programs with more than 9 balls must run in order.
+                </p>
+              </div>
+              {!viewMode ? (
+                <div className="pill-group">
+                  <button
+                    type="button"
+                    className={`pill-button ${!selectedProgram.randomized ? 'is-active' : ''}`}
+                    onClick={() => updateProgramRandomized(false)}
+                  >
+                    In Order
+                  </button>
+                  <button
+                    type="button"
+                    className={`pill-button ${selectedProgram.randomized ? 'is-active' : ''}`}
+                    onClick={() => updateProgramRandomized(true)}
+                  >
+                    Randomized
+                  </button>
+                </div>
+              ) : null}
+            </section>
             {!viewMode ? (
               <div className="stacked-actions top-actions">
                 <button type="button" className="secondary-button" onClick={duplicateProgram}>
