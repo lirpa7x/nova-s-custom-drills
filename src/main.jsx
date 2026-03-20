@@ -941,6 +941,7 @@ function CompactStepRow({
   viewMode,
   onChangeStep,
   onEdit,
+  onDuplicate,
   onDelete,
   onDragStart,
   onDragOver,
@@ -995,6 +996,9 @@ function CompactStepRow({
             <button type="button" className="ghost-button" onClick={onEdit}>
               Edit
             </button>
+            <button type="button" className="ghost-button" onClick={onDuplicate}>
+              Duplicate
+            </button>
             <button type="button" className="ghost-button danger-text" onClick={onDelete}>
               Delete
             </button>
@@ -1011,7 +1015,7 @@ function CompactStepRow({
   );
 }
 
-function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave, showTestButton, canTestButton, onTestStep }) {
+function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave, onDuplicate, showTestButton, canTestButton, onTestStep }) {
   if (!draft) {
     return null;
   }
@@ -1033,6 +1037,9 @@ function BallEditorScreen({ draft, stepIndex, onChangeDraft, onCancel, onSave, s
         <div className="ball-editor-head__actions">
           <button type="button" className="secondary-button" onClick={onCancel}>
             Cancel
+          </button>
+          <button type="button" className="secondary-button" onClick={onDuplicate}>
+            Duplicate Ball
           </button>
           <button type="button" className="primary-button" onClick={onSave}>
             Save Ball
@@ -1467,10 +1474,12 @@ function App() {
   const [programMode, setProgramMode] = useState('view');
   const [editingStepIndex, setEditingStepIndex] = useState(null);
   const [editingStepDraft, setEditingStepDraft] = useState(null);
+  const [startCountdown, setStartCountdown] = useState(0);
   const dragStepIndexRef = useRef(null);
   const touchDragIndexRef = useRef(null);
   const touchOverIndexRef = useRef(null);
   const touchGhostRef = useRef(null);
+  const pendingStartProgramIdRef = useRef(null);
   const bot = useNovaBotController();
 
   useEffect(() => {
@@ -1521,6 +1530,31 @@ function App() {
       botStage: bot.stage,
     });
   }, [bot.stage, editingStepIndex, programMode, screen, selectedProgram, store.programs.length, store.selectedProgramId]);
+
+  useEffect(() => {
+    if (!startCountdown) {
+      return undefined;
+    }
+    if (bot.stage !== 'standby') {
+      pendingStartProgramIdRef.current = null;
+      setStartCountdown(0);
+      return undefined;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setStartCountdown((previous) => {
+        if (previous <= 1) {
+          const programToRun = store.programs.find((program) => program.id === pendingStartProgramIdRef.current) || selectedProgram;
+          pendingStartProgramIdRef.current = null;
+          if (programToRun) {
+            bot.runProgram(programToRun);
+          }
+          return 0;
+        }
+        return previous - 1;
+      });
+    }, 1000);
+    return () => window.clearTimeout(timeoutId);
+  }, [bot, bot.stage, selectedProgram, startCountdown, store.programs]);
 
 
   function updateSelectedProgram(transform) {
@@ -1593,6 +1627,29 @@ function App() {
       program.steps[stepIndex] = { ...program.steps[stepIndex], ...patch };
       return program;
     });
+  }
+
+  function cloneStep(step) {
+    const copy = deepClone(step);
+    copy.id = uid('step');
+    copy.options = copy.options.map((option) => ({ ...option, id: uid('option') }));
+    return copy;
+  }
+
+  function duplicateStep(stepIndex, stepOverride = null) {
+    if (!selectedProgram) {
+      return null;
+    }
+    const sourceStep = stepOverride || selectedProgram.steps[stepIndex];
+    if (!sourceStep) {
+      return null;
+    }
+    const duplicatedStep = cloneStep(sourceStep);
+    updateSelectedProgram((program) => ({
+      ...program,
+      steps: [...program.steps.slice(0, stepIndex + 1), duplicatedStep, ...program.steps.slice(stepIndex + 1)],
+    }));
+    return duplicatedStep;
   }
 
   function deleteStep(stepIndex) {
@@ -1721,15 +1778,61 @@ function App() {
     setScreen('program-detail');
   }
 
+  function duplicateEditingStep() {
+    if (editingStepIndex == null || !editingStepDraft) {
+      return;
+    }
+    const duplicatedStep = duplicateStep(editingStepIndex, editingStepDraft);
+    if (!duplicatedStep) {
+      return;
+    }
+    setEditingStepIndex(editingStepIndex + 1);
+    setEditingStepDraft(deepClone(duplicatedStep));
+  }
+
+  function cancelPendingStart() {
+    pendingStartProgramIdRef.current = null;
+    setStartCountdown(0);
+  }
+
+  function handleRunToggle() {
+    if (!connected) {
+      return;
+    }
+    if (startCountdown) {
+      cancelPendingStart();
+      return;
+    }
+    if (['shooting', 'pause', 'shooting-restart'].includes(bot.stage)) {
+      bot.stopProgram();
+      return;
+    }
+    if (bot.stage === 'standby' && selectedProgram) {
+      pendingStartProgramIdRef.current = selectedProgram.id;
+      setStartCountdown(5);
+    }
+  }
+
+  function handlePauseToggle() {
+    if (bot.stage === 'shooting') {
+      bot.pauseProgram();
+    } else if (bot.stage === 'pause') {
+      bot.resumeProgram();
+    }
+  }
+
   const connected = bot.stage !== 'disconnected';
-  const canTestStep = bot.stage === 'standby';
+  const canTestStep = bot.stage === 'standby' && startCountdown === 0;
   const viewMode = programMode === 'view';
+  const controllerStage = startCountdown ? 'countdown' : bot.stage;
+  const controllerStatusText = startCountdown ? `Starting in ${startCountdown}s` : bot.statusText;
+  const runToggleLabel = startCountdown || ['shooting', 'pause', 'shooting-restart'].includes(bot.stage) ? 'Stop' : 'Start';
+  const pauseToggleLabel = bot.stage === 'pause' ? 'Resume' : 'Pause';
+  const runToggleDisabled = !connected || (!startCountdown && !['standby', 'shooting', 'pause', 'shooting-restart'].includes(bot.stage));
+  const pauseToggleDisabled = !connected || startCountdown > 0 || !['shooting', 'pause'].includes(bot.stage);
 
   return (
     <div className="app-shell">
-      <div className="app-build-badge" title={`Built ${BUILD_TIME}`}>
-        {BUILD_LABEL}
-      </div>
       {screen === 'program-list' ? (
         <main className="program-list-screen panel">
           <div className="panel-head">
@@ -1837,6 +1940,7 @@ function App() {
                   viewMode={viewMode}
                   onChangeStep={(patch) => updateStep(stepIndex, patch)}
                   onEdit={() => openStepEditor(stepIndex)}
+                  onDuplicate={() => duplicateStep(stepIndex)}
                   onDelete={() => deleteStep(stepIndex)}
                   onDragStart={(dragIndex) => {
                     dragStepIndexRef.current = dragIndex;
@@ -1863,44 +1967,6 @@ function App() {
               </div>
             ) : null}
           </main>
-
-          <section className="controller-dock panel">
-            <div className={`status-pill status-pill--${bot.stage}`}>{bot.statusText}</div>
-            <strong>{bot.deviceName}</strong>
-            <div className="controller-dock__connect">
-              {bot.stage === 'disconnected' ? (
-                <button type="button" className="primary-button" onClick={bot.connect}>
-                  Connect
-                </button>
-              ) : (
-                <button type="button" className="secondary-button" onClick={bot.disconnect}>
-                  Disconnect
-                </button>
-              )}
-            </div>
-            {connected ? (
-              <div className="control-grid control-grid--dock">
-                <button type="button" className="primary-button" onClick={() => bot.runProgram(selectedProgram)} disabled={!connected || bot.stage !== 'standby'}>
-                  Start
-                </button>
-                <button type="button" className="secondary-button" onClick={bot.pauseProgram} disabled={!connected || bot.stage !== 'shooting'}>
-                  Pause
-                </button>
-                <button type="button" className="secondary-button" onClick={bot.resumeProgram} disabled={!connected || bot.stage !== 'pause'}>
-                  Resume
-                </button>
-                <button
-                  type="button"
-                  className="danger-button"
-                  onClick={bot.stopProgram}
-                  disabled={!connected || !['shooting', 'pause', 'shooting-restart'].includes(bot.stage)}
-                >
-                  Stop
-                </button>
-              </div>
-            ) : null}
-            {bot.lastError ? <div className="error-banner">{bot.lastError}</div> : null}
-          </section>
         </>
       ) : null}
 
@@ -1911,11 +1977,51 @@ function App() {
           onChangeDraft={applyDraftStep}
           onCancel={cancelEditingStep}
           onSave={saveEditingStep}
+          onDuplicate={duplicateEditingStep}
           showTestButton
           canTestButton={canTestStep}
           onTestStep={bot.testStep}
         />
       ) : null}
+
+      <section className="controller-dock panel">
+        <div className={`status-pill status-pill--${controllerStage}`}>{controllerStatusText}</div>
+        <strong>{bot.deviceName}</strong>
+        <div className="controller-dock__connect">
+          {bot.stage === 'disconnected' ? (
+            <button type="button" className="primary-button" onClick={bot.connect}>
+              Connect
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                cancelPendingStart();
+                bot.disconnect();
+              }}
+            >
+              Disconnect
+            </button>
+          )}
+        </div>
+        {connected ? (
+          <div className="control-grid control-grid--dock">
+            <button type="button" className="primary-button" onClick={handleRunToggle} disabled={runToggleDisabled}>
+              {runToggleLabel}
+            </button>
+            <button type="button" className="secondary-button" onClick={handlePauseToggle} disabled={pauseToggleDisabled}>
+              {pauseToggleLabel}
+            </button>
+          </div>
+        ) : null}
+        {bot.lastError ? <div className="error-banner">{bot.lastError}</div> : null}
+        <div className="controller-dock__footer">
+          <div className="app-build-badge" title={`Built ${BUILD_TIME}`}>
+            {BUILD_LABEL}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

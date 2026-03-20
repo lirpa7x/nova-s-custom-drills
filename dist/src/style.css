@@ -72,20 +72,12 @@ button:disabled {
 }
 
 .app-build-badge {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  z-index: 40;
-  max-width: min(70vw, 360px);
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(31, 47, 42, 0.78);
-  color: #fdf8ef;
+  color: rgba(31, 47, 42, 0.5);
   font-family: 'Courier New', monospace;
-  font-size: 0.78rem;
+  font-size: 0.66rem;
   line-height: 1.2;
-  box-shadow: 0 10px 30px rgba(31, 47, 42, 0.18);
-  backdrop-filter: blur(12px);
+  letter-spacing: 0.04em;
+  text-align: center;
 }
 
 .shell {
@@ -568,6 +560,11 @@ button:disabled {
   color: #8a5e09;
 }
 
+.status-pill--countdown {
+  background: rgba(217, 95, 67, 0.14);
+  color: var(--accent-deep);
+}
+
 .control-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -641,13 +638,6 @@ button:disabled {
     padding: 14px;
   }
 
-  .app-build-badge {
-    top: 8px;
-    right: 8px;
-    max-width: calc(100vw - 16px);
-    font-size: 0.72rem;
-  }
-
   .sidebar,
   .editor,
   .cockpit {
@@ -685,6 +675,7 @@ button:disabled {
 .app-shell {
   max-width: 980px;
   margin: 0 auto;
+  padding-bottom: 220px;
 }
 
 .program-list-screen,
@@ -854,13 +845,15 @@ button:disabled {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  width: min(980px, 100vw);
+  width: min(980px, calc(100vw - 16px));
   bottom: 0;
   z-index: 30;
-  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
   border-radius: 18px 18px 0 0;
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  max-height: min(48vh, 360px);
+  overflow: auto;
 }
 
 .controller-dock__connect {
@@ -872,11 +865,7 @@ button:disabled {
 }
 
 .control-grid--dock {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.program-detail-screen {
-  padding-bottom: 190px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .editor-screen {
@@ -922,7 +911,16 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.controller-dock__footer {
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
 @media (max-width: 720px) {
+  .app-shell {
+    padding-bottom: 260px;
+  }
+
   .compact-step-row {
     grid-template-columns: 20px minmax(0, 1fr);
   }
@@ -936,13 +934,25 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .controller-dock {
+    width: calc(100vw - 8px);
+    max-height: min(56vh, 420px);
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
   .ball-editor-head {
     align-items: center;
   }
 
   .ball-editor-head__actions {
     width: 100%;
-    justify-content: flex-end;
+    justify-content: stretch;
+    flex-wrap: wrap;
+  }
+
+  .ball-editor-head__actions button {
+    flex: 1 1 0;
   }
 
   .ball-editor-footer {
